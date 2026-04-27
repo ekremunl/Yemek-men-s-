@@ -1,7 +1,7 @@
 // src/components/pool/PoolManager.tsx
 'use client';
 import { useState } from 'react';
-import { Plus, Trash2, Soup, UtensilsCrossed, Salad, Apple, Search } from 'lucide-react';
+import { Plus, Trash2, Soup, UtensilsCrossed, Salad, Apple, Search, Cookie } from 'lucide-react';
 import { useAppStore } from '@/context/store';
 import { CategoryKey } from '@/types';
 import { CATEGORY_META } from '@/lib/seedData';
@@ -12,6 +12,7 @@ const CAT_ICONS: Record<CategoryKey, React.ReactNode> = {
   mainCourses: <UtensilsCrossed className="w-4 h-4" />,
   sideDishes: <Salad className="w-4 h-4" />,
   complements: <Apple className="w-4 h-4" />,
+  snacks: <Cookie className="w-4 h-4" />,
 };
 
 const CAT_COLORS: Record<CategoryKey, { bg: string; border: string; badge: string; btn: string; text: string }> = {
@@ -42,6 +43,13 @@ const CAT_COLORS: Record<CategoryKey, { bg: string; border: string; badge: strin
     badge: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
     btn: 'bg-blue-500 hover:bg-blue-400',
     text: 'text-blue-400',
+  },
+  snacks: {
+    bg: 'bg-violet-500/10',
+    border: 'border-violet-500/30',
+    badge: 'bg-violet-500/20 text-violet-300 border-violet-500/30',
+    btn: 'bg-violet-500 hover:bg-violet-400',
+    text: 'text-violet-400',
   },
 };
 

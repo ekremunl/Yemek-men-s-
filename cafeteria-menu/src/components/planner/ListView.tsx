@@ -1,25 +1,17 @@
 // src/components/planner/ListView.tsx
 'use client';
-import { useState } from 'react';
-import { Soup, UtensilsCrossed, Salad, Apple, AlertTriangle, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
 import { useAppStore } from '@/context/store';
-import { CategoryKey, DailyMenu } from '@/types';
-import { CATEGORY_META } from '@/lib/seedData';
+import { MainMealKey, PlannerMealKey } from '@/types';
 import { cn, getDaysInMonth, formatDate, MONTH_NAMES_TR, DAY_NAMES_TR_FULL } from '@/lib/utils';
+import { MAIN_MEAL_KEYS, MEAL_LABELS_TR, PLANNER_MEAL_KEYS } from '@/lib/menu';
 import DayEditor from './DayEditor';
 
-const FIELD_MAP: Record<CategoryKey, keyof Omit<DailyMenu, 'date'>> = {
-  soups: 'soup',
-  mainCourses: 'mainCourse',
-  sideDishes: 'sideDish',
-  complements: 'complement',
-};
-
-const CAT_ICONS: Record<CategoryKey, React.ReactNode> = {
-  soups: <Soup className="w-3.5 h-3.5" />,
-  mainCourses: <UtensilsCrossed className="w-3.5 h-3.5" />,
-  sideDishes: <Salad className="w-3.5 h-3.5" />,
-  complements: <Apple className="w-3.5 h-3.5" />,
+const CELL_STYLES: Record<PlannerMealKey, string> = {
+  lunch: 'border-amber-500/20 bg-amber-500/10',
+  dinner: 'border-red-500/20 bg-red-500/10',
+  snack: 'border-violet-500/20 bg-violet-500/10',
 };
 
 export default function ListView() {
@@ -33,6 +25,10 @@ export default function ListView() {
   }));
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const itemNameMap = useMemo(
+    () => Object.fromEntries(foodItems.map((item) => [item.id, item.name])),
+    [foodItems]
+  );
 
   const daysInMonth = getDaysInMonth(currentYear, currentMonth);
 
@@ -49,6 +45,23 @@ export default function ListView() {
     const d = new Date(currentYear, currentMonth, i + 1);
     return { day: i + 1, dateStr: formatDate(d), dayName: DAY_NAMES_TR_FULL[(d.getDay() + 6) % 7] };
   });
+
+  const getMealSummary = (dateStr: string, mealKey: PlannerMealKey) => {
+    const menu = menus.find((entry) => entry.date === dateStr);
+    if (!menu) return '—';
+
+    if (mealKey === 'snack') {
+      return menu.snack ? itemNameMap[menu.snack] ?? '—' : '—';
+    }
+
+    return menu[mealKey].mainCourse ? itemNameMap[menu[mealKey].mainCourse] ?? '—' : '—';
+  };
+
+  const hasMealConflict = (dateStr: string, mealKey: MainMealKey) => {
+    const menu = menus.find((entry) => entry.date === dateStr);
+    const mainCourseId = menu?.[mealKey].mainCourse;
+    return mainCourseId ? checkConflicts(dateStr, mealKey, mainCourseId).length > 0 : false;
+  };
 
   return (
     <div className="space-y-4">
@@ -69,21 +82,15 @@ export default function ListView() {
           <thead>
             <tr className="border-b border-white/10 bg-white/5">
               <th className="text-left px-4 py-3 text-white/50 font-semibold text-xs uppercase tracking-wider w-32">Tarih</th>
-              {CATEGORY_META.map((cat) => (
-                <th key={cat.key} className="text-left px-3 py-3 text-white/50 font-semibold text-xs uppercase tracking-wider">
-                  <div className="flex items-center gap-1.5">
-                    {CAT_ICONS[cat.key]}
-                    <span className="hidden sm:inline">{cat.labelTR}</span>
-                  </div>
-                </th>
-              ))}
+              <th className="text-left px-3 py-3 text-white/50 font-semibold text-xs uppercase tracking-wider">Öğle Yemeği</th>
+              <th className="text-left px-3 py-3 text-white/50 font-semibold text-xs uppercase tracking-wider">Akşam Yemeği</th>
+              <th className="text-left px-3 py-3 text-white/50 font-semibold text-xs uppercase tracking-wider">Ara Öğün</th>
               <th className="px-3 py-3 w-12" />
             </tr>
           </thead>
           <tbody>
             {days.map(({ day, dateStr, dayName }) => {
-              const menu = menus.find((m) => m.date === dateStr);
-              const hasConflict = menu?.mainCourse ? checkConflicts(dateStr, menu.mainCourse).length > 0 : false;
+              const hasConflict = MAIN_MEAL_KEYS.some((mealKey) => hasMealConflict(dateStr, mealKey));
               const isWeekend = ['Cumartesi', 'Pazar'].includes(dayName);
               const today = formatDate(new Date());
 
@@ -102,22 +109,25 @@ export default function ListView() {
                     </div>
                     <div className="text-xs text-white/30">{dayName.slice(0, 3)}</div>
                   </td>
-                  {CATEGORY_META.map((cat) => {
-                    const field = FIELD_MAP[cat.key];
-                    const itemId = menu?.[field] as string | null;
-                    const item = foodItems.find((f) => f.id === itemId);
-                    const isConflictField = cat.key === 'mainCourses' && hasConflict;
+                  {PLANNER_MEAL_KEYS.map((mealKey) => {
+                    const summary = getMealSummary(dateStr, mealKey);
+                    const isConflictField = mealKey !== 'snack' && hasMealConflict(dateStr, mealKey);
 
                     return (
-                      <td key={cat.key} className="px-3 py-2.5">
-                        {item ? (
-                          <span className={cn('text-xs', isConflictField ? 'text-amber-300' : 'text-white/70')}>
-                            {isConflictField && <AlertTriangle className="inline w-3 h-3 mr-1 text-amber-400" />}
-                            {item.name}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-white/15">—</span>
-                        )}
+                      <td key={mealKey} className="px-3 py-2.5">
+                        <div className={cn('rounded-lg border px-3 py-2 min-h-[3.5rem]', CELL_STYLES[mealKey])}>
+                          <div className="text-[10px] uppercase tracking-wide text-white/45 font-semibold mb-1">
+                            {MEAL_LABELS_TR[mealKey]}
+                          </div>
+                          <div className={cn('text-xs leading-snug', summary === '—' ? 'text-white/20' : 'text-white/75')}>
+                            {isConflictField && (
+                              <span className="inline-flex items-center gap-1 mr-1 text-amber-300">
+                                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                              </span>
+                            )}
+                            {summary}
+                          </div>
+                        </div>
                       </td>
                     );
                   })}

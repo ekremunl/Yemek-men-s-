@@ -1,18 +1,23 @@
 // src/components/export/ExportPanel.tsx
 'use client';
-import { useState } from 'react';
-import { FileSpreadsheet, Printer, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { FileSpreadsheet, Printer, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAppStore } from '@/context/store';
-import { cn, getDaysInMonth, formatDate, MONTH_NAMES_TR, DAY_NAMES_TR_FULL } from '@/lib/utils';
-import { CATEGORY_META } from '@/lib/seedData';
-import { CategoryKey, DailyMenu } from '@/types';
-
-const FIELD_MAP: Record<CategoryKey, keyof Omit<DailyMenu, 'date'>> = {
-  soups: 'soup',
-  mainCourses: 'mainCourse',
-  sideDishes: 'sideDish',
-  complements: 'complement',
-};
+import {
+  cn,
+  escapeHtml,
+  formatDate,
+  formatShortDateTR,
+  getDaysInMonth,
+  MONTH_NAMES_TR,
+  DAY_NAMES_TR_FULL,
+} from '@/lib/utils';
+import {
+  COURSE_LABELS_TR,
+  isDayComplete,
+  MAIN_MEAL_KEYS,
+  MEAL_LABELS_TR,
+} from '@/lib/menu';
 
 export default function ExportPanel() {
   const { currentYear, currentMonth, setCurrentMonth, menus, foodItems } = useAppStore((s) => ({
@@ -41,10 +46,12 @@ export default function ExportPanel() {
     return { day: i + 1, dateStr: formatDate(d), dayName: DAY_NAMES_TR_FULL[(d.getDay() + 6) % 7] };
   });
 
-  const getItemName = (id: string | null | undefined) => {
-    if (!id) return '—';
-    return foodItems.find((f) => f.id === id)?.name || '—';
-  };
+  const itemNameMap = useMemo(
+    () => Object.fromEntries(foodItems.map((item) => [item.id, item.name])),
+    [foodItems]
+  );
+
+  const getItemName = (id: string | null | undefined) => (id ? itemNameMap[id] || '—' : '—');
 
   const exportToExcel = async () => {
     setIsExporting(true);
@@ -53,7 +60,19 @@ export default function ExportPanel() {
       const wsData: (string | number)[][] = [
         [`${MONTH_NAMES_TR[currentMonth]} ${currentYear} - Yemek Listesi`],
         [],
-        ['Tarih', 'Gün', 'Çorba', 'Ana Yemek', 'Yan Yemek', 'Tamamlayıcı'],
+        [
+          'Tarih',
+          'Gün',
+          'Öğle Çorba',
+          'Öğle Ana Yemek',
+          'Öğle Yan Yemek',
+          'Öğle Tamamlayıcı',
+          'Akşam Çorba',
+          'Akşam Ana Yemek',
+          'Akşam Yan Yemek',
+          'Akşam Tamamlayıcı',
+          'Ara Öğün',
+        ],
       ];
 
       days.forEach(({ day, dateStr, dayName }) => {
@@ -61,17 +80,34 @@ export default function ExportPanel() {
         wsData.push([
           `${day} ${MONTH_NAMES_TR[currentMonth]}`,
           dayName,
-          getItemName(menu?.soup),
-          getItemName(menu?.mainCourse),
-          getItemName(menu?.sideDish),
-          getItemName(menu?.complement),
+          getItemName(menu?.lunch.soup),
+          getItemName(menu?.lunch.mainCourse),
+          getItemName(menu?.lunch.sideDish),
+          getItemName(menu?.lunch.complement),
+          getItemName(menu?.dinner.soup),
+          getItemName(menu?.dinner.mainCourse),
+          getItemName(menu?.dinner.sideDish),
+          getItemName(menu?.dinner.complement),
+          getItemName(menu?.snack),
         ]);
       });
 
       const ws = XLSX.utils.aoa_to_sheet(wsData);
-      ws['!cols'] = [{ wch: 18 }, { wch: 12 }, { wch: 24 }, { wch: 24 }, { wch: 20 }, { wch: 20 }];
+      ws['!cols'] = [
+        { wch: 18 },
+        { wch: 12 },
+        { wch: 20 },
+        { wch: 24 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 24 },
+        { wch: 20 },
+        { wch: 20 },
+        { wch: 18 },
+      ];
       // Merge title row
-      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }];
+      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }];
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, `${MONTH_NAMES_TR[currentMonth]} ${currentYear}`);
@@ -90,12 +126,17 @@ export default function ExportPanel() {
       const isWeekend = ['Cumartesi', 'Pazar'].includes(dayName);
       return `
         <tr style="${isWeekend ? 'background:#f9f9f9;' : ''}">
-          <td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;">${day} ${MONTH_NAMES_TR[currentMonth]}</td>
-          <td style="padding:8px 12px;border:1px solid #e5e7eb;color:#6b7280;">${dayName}</td>
-          <td style="padding:8px 12px;border:1px solid #e5e7eb;">${getItemName(menu?.soup)}</td>
-          <td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:500;">${getItemName(menu?.mainCourse)}</td>
-          <td style="padding:8px 12px;border:1px solid #e5e7eb;">${getItemName(menu?.sideDish)}</td>
-          <td style="padding:8px 12px;border:1px solid #e5e7eb;">${getItemName(menu?.complement)}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;">${escapeHtml(`${day} ${MONTH_NAMES_TR[currentMonth]}`)}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;color:#6b7280;">${escapeHtml(dayName)}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;">${escapeHtml(getItemName(menu?.lunch.soup))}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:500;">${escapeHtml(getItemName(menu?.lunch.mainCourse))}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;">${escapeHtml(getItemName(menu?.lunch.sideDish))}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;">${escapeHtml(getItemName(menu?.lunch.complement))}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;">${escapeHtml(getItemName(menu?.dinner.soup))}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:500;">${escapeHtml(getItemName(menu?.dinner.mainCourse))}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;">${escapeHtml(getItemName(menu?.dinner.sideDish))}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;">${escapeHtml(getItemName(menu?.dinner.complement))}</td>
+          <td style="padding:8px 12px;border:1px solid #e5e7eb;">${escapeHtml(getItemName(menu?.snack))}</td>
         </tr>
       `;
     }).join('');
@@ -110,9 +151,10 @@ export default function ExportPanel() {
           body { font-family: 'Inter', sans-serif; padding: 32px; color: #111827; }
           h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
           p { color: #6b7280; margin-bottom: 24px; font-size: 14px; }
-          table { width: 100%; border-collapse: collapse; font-size: 13px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
           thead { background: #1e293b; color: white; }
           thead th { padding: 10px 12px; text-align: left; font-weight: 600; border: 1px solid #334155; }
+          .group-head th { background: #334155; border: 1px solid #475569; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
           tbody tr:hover { background: #f0f9ff; }
           @media print { body { padding: 16px; } }
         </style>
@@ -122,8 +164,16 @@ export default function ExportPanel() {
         <p>Okul Yatakhanesi Yemekhane Aylık Menüsü</p>
         <table>
           <thead>
+            <tr class="group-head">
+              <th rowspan="2">Tarih</th>
+              <th rowspan="2">Gün</th>
+              <th colspan="4">Öğle Yemeği</th>
+              <th colspan="4">Akşam Yemeği</th>
+              <th rowspan="2">Ara Öğün</th>
+            </tr>
             <tr>
-              <th>Tarih</th><th>Gün</th><th>Çorba</th><th>Ana Yemek</th><th>Yan Yemek</th><th>Tamamlayıcı</th>
+              <th>Çorba</th><th>Ana Yemek</th><th>Yan Yemek</th><th>Tamamlayıcı</th>
+              <th>Çorba</th><th>Ana Yemek</th><th>Yan Yemek</th><th>Tamamlayıcı</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -136,10 +186,7 @@ export default function ExportPanel() {
   };
 
   const plannedCount = days.filter(({ dateStr }) => menus.some((m) => m.date === dateStr)).length;
-  const fullCount = days.filter(({ dateStr }) => {
-    const m = menus.find((x) => x.date === dateStr);
-    return m && m.soup && m.mainCourse && m.sideDish && m.complement;
-  }).length;
+  const fullCount = days.filter(({ dateStr }) => isDayComplete(menus.find((x) => x.date === dateStr))).length;
 
   return (
     <div className="space-y-6">
@@ -215,11 +262,17 @@ export default function ExportPanel() {
               <tr>
                 <th className="text-left px-3 py-2.5 text-white/50 font-semibold uppercase tracking-wider">Tarih</th>
                 <th className="text-left px-3 py-2.5 text-white/50 font-semibold uppercase tracking-wider">Gün</th>
-                {CATEGORY_META.map((cat) => (
-                  <th key={cat.key} className="text-left px-3 py-2.5 text-white/50 font-semibold uppercase tracking-wider">
-                    {cat.labelTR}
+                {MAIN_MEAL_KEYS.map((mealKey) => (
+                  <th
+                    key={mealKey}
+                    className="text-left px-3 py-2.5 text-white/50 font-semibold uppercase tracking-wider min-w-[15rem]"
+                  >
+                    {MEAL_LABELS_TR[mealKey]}
                   </th>
                 ))}
+                <th className="text-left px-3 py-2.5 text-white/50 font-semibold uppercase tracking-wider min-w-[10rem]">
+                  Ara Öğün
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -227,16 +280,19 @@ export default function ExportPanel() {
                 const menu = menus.find((m) => m.date === dateStr);
                 return (
                   <tr key={dateStr} className="border-t border-white/5 hover:bg-white/[0.03]">
-                    <td className="px-3 py-2 text-white/70 font-medium">{day} {MONTH_NAMES_TR[currentMonth].slice(0, 3)}</td>
+                    <td className="px-3 py-2 text-white/70 font-medium">{formatShortDateTR(dateStr)}</td>
                     <td className="px-3 py-2 text-white/40">{dayName.slice(0, 3)}</td>
-                    {CATEGORY_META.map((cat) => {
-                      const field = FIELD_MAP[cat.key];
-                      return (
-                        <td key={cat.key} className="px-3 py-2 text-white/60">
-                          {getItemName((menu?.[field] as string | null) || null)}
-                        </td>
-                      );
-                    })}
+                    {MAIN_MEAL_KEYS.map((mealKey) => (
+                      <td key={mealKey} className="px-3 py-2 text-white/60">
+                        <div className="space-y-1">
+                          <div><span className="text-white/35">{COURSE_LABELS_TR.soup}:</span> {getItemName(menu?.[mealKey].soup)}</div>
+                          <div><span className="text-white/35">{COURSE_LABELS_TR.mainCourse}:</span> {getItemName(menu?.[mealKey].mainCourse)}</div>
+                          <div><span className="text-white/35">{COURSE_LABELS_TR.sideDish}:</span> {getItemName(menu?.[mealKey].sideDish)}</div>
+                          <div><span className="text-white/35">{COURSE_LABELS_TR.complement}:</span> {getItemName(menu?.[mealKey].complement)}</div>
+                        </div>
+                      </td>
+                    ))}
+                    <td className="px-3 py-2 text-white/60">{getItemName(menu?.snack)}</td>
                   </tr>
                 );
               })}

@@ -1,15 +1,24 @@
 // src/components/planner/CalendarView.tsx
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, AlertTriangle, Check } from 'lucide-react';
 import { useAppStore } from '@/context/store';
 import { cn, getDaysInMonth, getFirstDayOfMonth, MONTH_NAMES_TR, DAY_NAMES_TR, formatDate } from '@/lib/utils';
+import {
+  countDayEntries,
+  isDayComplete,
+  MAIN_MEAL_KEYS,
+  MEAL_SHORT_LABELS_TR,
+  PLANNER_MEAL_KEYS,
+} from '@/lib/menu';
+import { MainMealKey, PlannerMealKey } from '@/types';
 import DayEditor from './DayEditor';
 
-function completionScore(menu: { soup: string | null; mainCourse: string | null; sideDish: string | null; complement: string | null } | undefined): number {
-  if (!menu) return 0;
-  return [menu.soup, menu.mainCourse, menu.sideDish, menu.complement].filter(Boolean).length;
-}
+const SUMMARY_STYLES: Record<PlannerMealKey, string> = {
+  lunch: 'border-amber-500/20 bg-amber-500/10 text-amber-100',
+  dinner: 'border-red-500/20 bg-red-500/10 text-red-100',
+  snack: 'border-violet-500/20 bg-violet-500/10 text-violet-100',
+};
 
 export default function CalendarView() {
   const { currentYear, currentMonth, setCurrentMonth, menus, foodItems, checkConflicts } = useAppStore((s) => ({
@@ -42,6 +51,28 @@ export default function CalendarView() {
 
   // Pad to full weeks
   while (cells.length % 7 !== 0) cells.push(null);
+
+  const itemNameMap = useMemo(
+    () => Object.fromEntries(foodItems.map((item) => [item.id, item.name])),
+    [foodItems]
+  );
+
+  const getSummaryText = (dateStr: string, mealKey: PlannerMealKey) => {
+    const menu = menus.find((entry) => entry.date === dateStr);
+    if (!menu) return '—';
+
+    if (mealKey === 'snack') {
+      return menu.snack ? itemNameMap[menu.snack] ?? '—' : '—';
+    }
+
+    return menu[mealKey].mainCourse ? itemNameMap[menu[mealKey].mainCourse] ?? '—' : '—';
+  };
+
+  const hasMealConflict = (dateStr: string, mealKey: MainMealKey) => {
+    const menu = menus.find((entry) => entry.date === dateStr);
+    const mainCourseId = menu?.[mealKey].mainCourse;
+    return mainCourseId ? checkConflicts(dateStr, mealKey, mainCourseId).length > 0 : false;
+  };
 
   return (
     <div className="space-y-4">
@@ -85,13 +116,13 @@ export default function CalendarView() {
       <div className="grid grid-cols-7 gap-1.5">
         {cells.map((day, idx) => {
           if (!day) {
-            return <div key={`empty-${idx}`} className="aspect-square" />;
+            return <div key={`empty-${idx}`} className="min-h-[8.5rem]" />;
           }
 
           const dateStr = formatDate(new Date(currentYear, currentMonth, day));
           const menu = menus.find((m) => m.date === dateStr);
-          const score = completionScore(menu);
-          const hasConflict = menu?.mainCourse ? checkConflicts(dateStr, menu.mainCourse).length > 0 : false;
+          const score = countDayEntries(menu);
+          const hasConflict = MAIN_MEAL_KEYS.some((mealKey) => hasMealConflict(dateStr, mealKey));
           const today = new Date();
           const isToday = today.getDate() === day && today.getMonth() === currentMonth && today.getFullYear() === currentYear;
 
@@ -100,7 +131,7 @@ export default function CalendarView() {
               key={dateStr}
               onClick={() => setSelectedDate(dateStr)}
               className={cn(
-                'aspect-square rounded-xl border text-left p-1.5 flex flex-col transition-all group relative overflow-hidden',
+                'min-h-[8.5rem] rounded-xl border text-left p-2 flex flex-col transition-all group relative overflow-hidden',
                 isToday
                   ? 'border-indigo-500/60 bg-indigo-500/10 ring-1 ring-indigo-500/40'
                   : score > 0
@@ -117,26 +148,29 @@ export default function CalendarView() {
                 {day}
               </span>
 
-              {/* Completion dots */}
-              {score > 0 && (
-                <div className="flex gap-0.5 mt-auto flex-wrap">
-                  {[0, 1, 2, 3].map((i) => (
+              <div className="mt-2 space-y-1.5">
+                {PLANNER_MEAL_KEYS.map((mealKey) => {
+                  const text = getSummaryText(dateStr, mealKey);
+                  return (
                     <div
-                      key={i}
+                      key={mealKey}
                       className={cn(
-                        'w-1.5 h-1.5 rounded-full',
-                        i === 0 ? (menu?.soup ? 'bg-amber-400' : 'bg-white/10') :
-                        i === 1 ? (menu?.mainCourse ? 'bg-red-400' : 'bg-white/10') :
-                        i === 2 ? (menu?.sideDish ? 'bg-emerald-400' : 'bg-white/10') :
-                        (menu?.complement ? 'bg-blue-400' : 'bg-white/10')
+                        'rounded-lg border px-2 py-1 text-[10px] leading-tight',
+                        SUMMARY_STYLES[mealKey],
+                        text === '—' ? 'opacity-50' : 'opacity-100'
                       )}
-                    />
-                  ))}
-                </div>
-              )}
+                    >
+                      <span className="block font-semibold uppercase tracking-wide text-white/70">
+                        {MEAL_SHORT_LABELS_TR[mealKey]}
+                      </span>
+                      <span className="block truncate mt-0.5">{text}</span>
+                    </div>
+                  );
+                })}
+              </div>
 
               {/* Full check */}
-              {score === 4 && !hasConflict && (
+              {isDayComplete(menu) && !hasConflict && (
                 <div className="absolute top-1 right-1">
                   <Check className="w-2.5 h-2.5 text-emerald-400" />
                 </div>
@@ -157,19 +191,15 @@ export default function CalendarView() {
       <div className="flex items-center gap-4 text-xs text-white/40 flex-wrap">
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-full bg-amber-400" />
-          <span>Çorba</span>
+          <span>Öğle</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded-full bg-red-400" />
-          <span>Ana Yemek</span>
+          <span>Akşam</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-emerald-400" />
-          <span>Yan Yemek</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-blue-400" />
-          <span>Tamamlayıcı</span>
+          <div className="w-2 h-2 rounded-full bg-violet-400" />
+          <span>Ara Öğün</span>
         </div>
         <div className="flex items-center gap-1.5">
           <AlertTriangle className="w-3 h-3 text-amber-400" />

@@ -41,8 +41,17 @@ export function getWeekNumber(dateStr: string): number {
 export function isSameWeek(dateStr1: string, dateStr2: string): boolean {
   const d1 = parseDate(dateStr1);
   const d2 = parseDate(dateStr2);
-  if (d1.getMonth() !== d2.getMonth() || d1.getFullYear() !== d2.getFullYear()) return false;
-  return getWeekNumber(dateStr1) === getWeekNumber(dateStr2);
+
+  const getStartOfWeek = (date: Date) => {
+    const start = new Date(date);
+    const day = start.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    start.setDate(start.getDate() + diff);
+    start.setHours(0, 0, 0, 0);
+    return start;
+  };
+
+  return getStartOfWeek(d1).getTime() === getStartOfWeek(d2).getTime();
 }
 
 export function getMonthMenus(menus: DailyMenu[], year: number, month: number): DailyMenu[] {
@@ -59,3 +68,22 @@ export const MONTH_NAMES_TR = [
 
 export const DAY_NAMES_TR = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 export const DAY_NAMES_TR_FULL = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+
+export function formatShortDateTR(dateStr: string): string {
+  const d = parseDate(dateStr);
+  return `${d.getDate()} ${MONTH_NAMES_TR[d.getMonth()]}`;
+}
+
+export function formatDateLabelTR(date: Date): string {
+  const dayName = DAY_NAMES_TR_FULL[(date.getDay() + 6) % 7];
+  return `${dayName}, ${date.getDate()} ${MONTH_NAMES_TR[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

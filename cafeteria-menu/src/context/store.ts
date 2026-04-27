@@ -2,9 +2,10 @@
 'use client';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { FoodItem, DailyMenu, CategoryKey, ConflictWarning } from '@/types';
+import { FoodItem, DailyMenu, CategoryKey, ConflictWarning, PlannerMealKey, MealCourseField, FourCourseMeal, MainMealKey } from '@/types';
 import { SEED_DATA } from '@/lib/seedData';
 import { generateId, isSameWeek, parseDate } from '@/lib/utils';
+import { createEmptyDailyMenu, createEmptyFourCourseMeal, getAllMenuItemIds, MAIN_MEAL_KEYS, MEAL_COURSE_FIELDS } from '@/lib/menu';
 
 interface Toast {
   id: string;
@@ -21,8 +22,9 @@ interface AppState {
 
   // Monthly menus
   menus: DailyMenu[];
-  setMenuDay: (date: string, field: keyof Omit<DailyMenu, 'date'>, itemId: string | null) => void;
-  clearMenuDay: (date: string) => void;
+  setMealCourse: (date: string, mealKey: MainMealKey, field: MealCourseField, itemId: string | null) => void;
+  setSnack: (date: string, itemId: string | null) => void;
+  clearMenuDay: (date: string, mealKey?: PlannerMealKey) => void;
 
   // Current month navigation
   currentYear: number;
@@ -30,7 +32,7 @@ interface AppState {
   setCurrentMonth: (year: number, month: number) => void;
 
   // Conflict detection
-  checkConflicts: (date: string, mainCourseId: string) => ConflictWarning[];
+  checkConflicts: (date: string, mealKey: MainMealKey, mainCourseId: string) => ConflictWarning[];
 
   // Toasts
   toasts: Toast[];
@@ -40,6 +42,68 @@ interface AppState {
   // Active tab
   activeTab: 'planner' | 'pool' | 'export';
   setActiveTab: (tab: 'planner' | 'pool' | 'export') => void;
+}
+
+type LegacyDailyMenu = {
+  date: string;
+  soup?: string | null;
+  mainCourse?: string | null;
+  sideDish?: string | null;
+  complement?: string | null;
+};
+
+function isFourCourseMeal(value: unknown): value is FourCourseMeal {
+  if (!value || typeof value !== 'object') return false;
+  return MEAL_COURSE_FIELDS.every((field) => field in (value as Record<string, unknown>));
+}
+
+function normalizeMenu(menu: DailyMenu | LegacyDailyMenu): DailyMenu {
+  if ('lunch' in menu && isFourCourseMeal(menu.lunch)) {
+    const dinner = 'dinner' in menu && isFourCourseMeal(menu.dinner) ? menu.dinner : createEmptyFourCourseMeal();
+    return {
+      date: menu.date,
+      lunch: {
+        soup: menu.lunch.soup ?? null,
+        mainCourse: menu.lunch.mainCourse ?? null,
+        sideDish: menu.lunch.sideDish ?? null,
+        complement: menu.lunch.complement ?? null,
+      },
+      dinner: {
+        soup: dinner.soup ?? null,
+        mainCourse: dinner.mainCourse ?? null,
+        sideDish: dinner.sideDish ?? null,
+        complement: dinner.complement ?? null,
+      },
+      snack: 'snack' in menu ? menu.snack ?? null : null,
+    };
+  }
+
+  return {
+    date: menu.date,
+    lunch: {
+      soup: menu.soup ?? null,
+      mainCourse: menu.mainCourse ?? null,
+      sideDish: menu.sideDish ?? null,
+      complement: menu.complement ?? null,
+    },
+    dinner: createEmptyFourCourseMeal(),
+    snack: null,
+  };
+}
+
+function normalizeFoodItems(foodItems: FoodItem[] | undefined): FoodItem[] {
+  const existing = foodItems ?? [];
+  if (existing.length === 0) return SEED_DATA;
+
+  const snackSeedItems = SEED_DATA.filter((item) => item.category === 'snacks');
+  const missingSnackItems = snackSeedItems.filter(
+    (seedItem) =>
+      !existing.some(
+        (item) => item.category === 'snacks' && item.name.toLowerCase() === seedItem.name.toLowerCase()
+      )
+  );
+
+  return [...existing, ...missingSnackItems];
 }
 
 export const useAppStore = create<AppState>()(
@@ -76,60 +140,120 @@ export const useAppStore = create<AppState>()(
         // Also clear from menus
         set((state) => ({
           foodItems: state.foodItems.filter((f) => f.id !== id),
-          menus: state.menus.map((m) => ({
-            ...m,
-            soup: m.soup === id ? null : m.soup,
-            mainCourse: m.mainCourse === id ? null : m.mainCourse,
-            sideDish: m.sideDish === id ? null : m.sideDish,
-            complement: m.complement === id ? null : m.complement,
-          })),
+          menus: state.menus.map((menu) => {
+            const normalizedMenu = normalizeMenu(menu);
+            if (!getAllMenuItemIds(normalizedMenu).includes(id)) return normalizedMenu;
+
+            return {
+              ...normalizedMenu,
+              lunch: {
+                soup: normalizedMenu.lunch.soup === id ? null : normalizedMenu.lunch.soup,
+                mainCourse: normalizedMenu.lunch.mainCourse === id ? null : normalizedMenu.lunch.mainCourse,
+                sideDish: normalizedMenu.lunch.sideDish === id ? null : normalizedMenu.lunch.sideDish,
+                complement: normalizedMenu.lunch.complement === id ? null : normalizedMenu.lunch.complement,
+              },
+              dinner: {
+                soup: normalizedMenu.dinner.soup === id ? null : normalizedMenu.dinner.soup,
+                mainCourse: normalizedMenu.dinner.mainCourse === id ? null : normalizedMenu.dinner.mainCourse,
+                sideDish: normalizedMenu.dinner.sideDish === id ? null : normalizedMenu.dinner.sideDish,
+                complement: normalizedMenu.dinner.complement === id ? null : normalizedMenu.dinner.complement,
+              },
+              snack: normalizedMenu.snack === id ? null : normalizedMenu.snack,
+            };
+          }),
         }));
       },
 
-      setMenuDay: (date, field, itemId) => {
+      setMealCourse: (date, mealKey, field, itemId) => {
         set((state) => {
           const existing = state.menus.find((m) => m.date === date);
           if (existing) {
             return {
               menus: state.menus.map((m) =>
-                m.date === date ? { ...m, [field]: itemId } : m
+                m.date === date
+                  ? {
+                      ...normalizeMenu(m),
+                      [mealKey]: {
+                        ...normalizeMenu(m)[mealKey],
+                        [field]: itemId,
+                      },
+                    }
+                  : normalizeMenu(m)
               ),
             };
           }
-          const newMenu: DailyMenu = {
-            date,
-            soup: null,
-            mainCourse: null,
-            sideDish: null,
-            complement: null,
-            [field]: itemId,
-          };
+          const newMenu = createEmptyDailyMenu(date);
+          newMenu[mealKey][field] = itemId;
           return { menus: [...state.menus, newMenu] };
         });
 
         // Check conflicts for main course
         if (field === 'mainCourse' && itemId) {
-          const conflicts = get().checkConflicts(date, itemId);
+          const conflicts = get().checkConflicts(date, mealKey, itemId);
           if (conflicts.length > 0) {
             const c = conflicts[0];
+            const scopeText =
+              c.conflictType === 'daily'
+                ? 'aynı günde'
+                : c.conflictType === 'weekly'
+                ? 'aynı haftada'
+                : 'aynı ayda';
+            const conflictDates = c.conflicts
+              .map((entry) => `${entry.date} (${entry.mealKey === 'lunch' ? 'Öğle' : 'Akşam'})`)
+              .join(', ');
             get().addToast({
               type: 'warning',
-              title: `⚠️ Tekrar Uyarısı: ${c.conflictType === 'weekly' ? 'Aynı Hafta' : 'Aynı Ay'}`,
-              message: `"${c.itemName}" bu ${c.conflictType === 'weekly' ? 'haftada' : 'ayda'} zaten planlandı: ${c.conflictDates.join(', ')}`,
+              title:
+                c.conflictType === 'daily'
+                  ? '⚠️ Tekrar Uyarısı: Aynı Gün'
+                  : c.conflictType === 'weekly'
+                  ? '⚠️ Tekrar Uyarısı: Aynı Hafta'
+                  : '⚠️ Tekrar Uyarısı: Aynı Ay',
+              message: `"${c.itemName}" ${scopeText} zaten planlandı: ${conflictDates}`,
             });
           }
         }
       },
 
-      clearMenuDay: (date) => {
+      setSnack: (date, itemId) => {
+        set((state) => {
+          const existing = state.menus.find((m) => m.date === date);
+          if (existing) {
+            return {
+              menus: state.menus.map((m) =>
+                m.date === date ? { ...normalizeMenu(m), snack: itemId } : normalizeMenu(m)
+              ),
+            };
+          }
+          const newMenu = createEmptyDailyMenu(date);
+          newMenu.snack = itemId;
+          return { menus: [...state.menus, newMenu] };
+        });
+      },
+
+      clearMenuDay: (date, mealKey) => {
         set((state) => ({
-          menus: state.menus.filter((m) => m.date !== date),
+          menus: state.menus
+            .map((menu) => normalizeMenu(menu))
+            .flatMap((menu) => {
+              if (menu.date !== date) return [menu];
+
+              if (!mealKey) return [];
+
+              const cleared: DailyMenu =
+                mealKey === 'snack'
+                  ? { ...menu, snack: null }
+                  : { ...menu, [mealKey]: createEmptyFourCourseMeal() };
+
+              const stillHasItems = getAllMenuItemIds(cleared).length > 0;
+              return stillHasItems ? [cleared] : [];
+            }),
         }));
       },
 
       setCurrentMonth: (year, month) => set({ currentYear: year, currentMonth: month }),
 
-      checkConflicts: (date, mainCourseId) => {
+      checkConflicts: (date, mealKey, mainCourseId) => {
         const { menus, foodItems } = get();
         const item = foodItems.find((f) => f.id === mainCourseId);
         if (!item) return [];
@@ -139,27 +263,44 @@ export const useAppStore = create<AppState>()(
         const targetMonth = targetDate.getMonth();
         const targetYear = targetDate.getFullYear();
 
-        const sameDayMenus = menus.filter((m) => m.date !== date && m.mainCourse === mainCourseId);
+        const allConflicts = menus
+          .map((menu) => normalizeMenu(menu))
+          .flatMap((menu) =>
+            MAIN_MEAL_KEYS.flatMap((candidateMealKey) =>
+              menu[candidateMealKey].mainCourse === mainCourseId &&
+              !(menu.date === date && candidateMealKey === mealKey)
+                ? [{ date: menu.date, mealKey: candidateMealKey }]
+                : []
+            )
+          );
 
-        const weeklyConflicts = sameDayMenus.filter((m) => isSameWeek(date, m.date));
-        const monthlyConflicts = sameDayMenus.filter((m) => {
-          const d = parseDate(m.date);
+        const dailyConflicts = allConflicts.filter((entry) => entry.date === date);
+        const weeklyConflicts = allConflicts.filter((entry) => isSameWeek(date, entry.date));
+        const monthlyConflicts = allConflicts.filter((entry) => {
+          const d = parseDate(entry.date);
           return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
         });
 
-        if (weeklyConflicts.length > 0) {
+        if (dailyConflicts.length > 0) {
+          conflicts.push({
+            itemId: mainCourseId,
+            itemName: item.name,
+            conflictType: 'daily',
+            conflicts: dailyConflicts,
+          });
+        } else if (weeklyConflicts.length > 0) {
           conflicts.push({
             itemId: mainCourseId,
             itemName: item.name,
             conflictType: 'weekly',
-            conflictDates: weeklyConflicts.map((m) => m.date),
+            conflicts: weeklyConflicts,
           });
         } else if (monthlyConflicts.length > 0) {
           conflicts.push({
             itemId: mainCourseId,
             itemName: item.name,
             conflictType: 'monthly',
-            conflictDates: monthlyConflicts.map((m) => m.date),
+            conflicts: monthlyConflicts,
           });
         }
 
@@ -182,7 +323,24 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'cafeteria-menu-store',
+      version: 1,
       storage: createJSONStorage(() => (typeof window !== 'undefined' ? localStorage : { getItem: () => null, setItem: () => {}, removeItem: () => {} })),
+      migrate: (persistedState: unknown) => {
+        if (!persistedState || typeof persistedState !== 'object') return persistedState;
+
+        const state = persistedState as {
+          foodItems?: FoodItem[];
+          menus?: (DailyMenu | LegacyDailyMenu)[];
+          currentYear?: number;
+          currentMonth?: number;
+        };
+
+        return {
+          ...state,
+          foodItems: normalizeFoodItems(state.foodItems),
+          menus: (state.menus ?? []).map((menu) => normalizeMenu(menu)),
+        };
+      },
       partialize: (state) => ({
         foodItems: state.foodItems,
         menus: state.menus,
