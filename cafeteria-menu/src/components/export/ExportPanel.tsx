@@ -6,8 +6,8 @@ import { useAppStore } from '@/context/store';
 import {
   cn,
   escapeHtml,
-  formatDate,
   formatShortDateTR,
+  getCalendarDateKey,
   getDaysInMonth,
   MONTH_NAMES_TR,
   DAY_NAMES_TR_FULL,
@@ -42,8 +42,8 @@ export default function ExportPanel() {
   };
 
   const days = Array.from({ length: daysInMonth }, (_, i) => {
-    const d = new Date(currentYear, currentMonth, i + 1);
-    return { day: i + 1, dateStr: formatDate(d), dayName: DAY_NAMES_TR_FULL[(d.getDay() + 6) % 7] };
+    const d = new Date(currentYear, currentMonth, i + 1, 12);
+    return { day: i + 1, dateStr: getCalendarDateKey(currentYear, currentMonth, i + 1), dayName: DAY_NAMES_TR_FULL[(d.getDay() + 6) % 7] };
   });
 
   const itemNameMap = useMemo(

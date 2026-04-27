@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
 import { useAppStore } from '@/context/store';
 import { MainMealKey, PlannerMealKey } from '@/types';
-import { cn, getDaysInMonth, formatDate, MONTH_NAMES_TR, DAY_NAMES_TR_FULL } from '@/lib/utils';
+import { cn, getDaysInMonth, getMonthDayEntries, getTodayIsoDate, MONTH_NAMES_TR } from '@/lib/utils';
 import { MAIN_MEAL_KEYS, MEAL_LABELS_TR, PLANNER_MEAL_KEYS } from '@/lib/menu';
 import DayEditor from './DayEditor';
 
@@ -41,10 +41,7 @@ export default function ListView() {
     else setCurrentMonth(currentYear, currentMonth + 1);
   };
 
-  const days = Array.from({ length: daysInMonth }, (_, i) => {
-    const d = new Date(currentYear, currentMonth, i + 1);
-    return { day: i + 1, dateStr: formatDate(d), dayName: DAY_NAMES_TR_FULL[(d.getDay() + 6) % 7] };
-  });
+  const days = getMonthDayEntries(currentYear, currentMonth);
 
   const getMealSummary = (dateStr: string, mealKey: PlannerMealKey) => {
     const menu = menus.find((entry) => entry.date === dateStr);
@@ -92,7 +89,7 @@ export default function ListView() {
             {days.map(({ day, dateStr, dayName }) => {
               const hasConflict = MAIN_MEAL_KEYS.some((mealKey) => hasMealConflict(dateStr, mealKey));
               const isWeekend = ['Cumartesi', 'Pazar'].includes(dayName);
-              const today = formatDate(new Date());
+              const today = getTodayIsoDate();
 
               return (
                 <tr

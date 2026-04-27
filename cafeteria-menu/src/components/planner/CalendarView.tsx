@@ -3,7 +3,16 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, AlertTriangle, Check } from 'lucide-react';
 import { useAppStore } from '@/context/store';
-import { cn, getDaysInMonth, getFirstDayOfMonth, MONTH_NAMES_TR, DAY_NAMES_TR, formatDate } from '@/lib/utils';
+import {
+  cn,
+  getCalendarDateKey,
+  getDaysInMonth,
+  getFirstDayOfMonth,
+  getMonthMenus,
+  MONTH_NAMES_TR,
+  DAY_NAMES_TR,
+  getTodayDateKey,
+} from '@/lib/utils';
 import {
   countDayEntries,
   isDayComplete,
@@ -89,10 +98,7 @@ export default function CalendarView() {
             {MONTH_NAMES_TR[currentMonth]} {currentYear}
           </h2>
           <p className="text-xs text-white/40 mt-0.5">
-            {menus.filter((m) => {
-              const d = new Date(m.date);
-              return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
-            }).length} / {daysInMonth} gün planlandı
+            {getMonthMenus(menus, currentYear, currentMonth).length} / {daysInMonth} gün planlandı
           </p>
         </div>
         <button
@@ -119,12 +125,11 @@ export default function CalendarView() {
             return <div key={`empty-${idx}`} className="min-h-[8.5rem]" />;
           }
 
-          const dateStr = formatDate(new Date(currentYear, currentMonth, day));
+          const dateStr = getCalendarDateKey(currentYear, currentMonth, day);
           const menu = menus.find((m) => m.date === dateStr);
           const score = countDayEntries(menu);
           const hasConflict = MAIN_MEAL_KEYS.some((mealKey) => hasMealConflict(dateStr, mealKey));
-          const today = new Date();
-          const isToday = today.getDate() === day && today.getMonth() === currentMonth && today.getFullYear() === currentYear;
+          const isToday = dateStr === getTodayDateKey();
 
           return (
             <button
