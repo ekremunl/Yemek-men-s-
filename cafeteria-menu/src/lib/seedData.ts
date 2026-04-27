@@ -34,6 +34,14 @@ export const CATEGORY_META: CategoryMeta[] = [
     accent: '#3b82f6',
     icon: 'Apple',
   },
+  {
+    key: 'snacks',
+    label: 'Snacks',
+    labelTR: 'Ara Öğünler',
+    color: 'violet',
+    accent: '#8b5cf6',
+    icon: 'Cookie',
+  },
 ];
 
 export const SEED_DATA: FoodItem[] = [
@@ -96,4 +104,12 @@ export const SEED_DATA: FoodItem[] = [
   { id: 'c10', name: 'Portakal / Elma', category: 'complements', tags: ['fruit'] },
   { id: 'c11', name: 'Sütlaç', category: 'complements', tags: ['dairy', 'dessert'] },
   { id: 'c12', name: 'Helva', category: 'complements', tags: ['dessert'] },
+
+  // Snacks
+  { id: 'sn1', name: 'Kek', category: 'snacks', tags: ['dessert'] },
+  { id: 'sn2', name: 'Bisküvi', category: 'snacks', tags: ['dessert'] },
+  { id: 'sn3', name: 'Puding', category: 'snacks', tags: ['dessert', 'dairy'] },
+  { id: 'sn4', name: 'Sütlaç', category: 'snacks', tags: ['dessert', 'dairy'] },
+  { id: 'sn5', name: 'Meyve', category: 'snacks', tags: ['fruit'] },
+  { id: 'sn6', name: 'Gözleme', category: 'snacks', tags: ['traditional'] },
 ];

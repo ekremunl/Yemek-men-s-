@@ -16,7 +16,7 @@ export default function MenuPlanner() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white">Aylık Menü Planlayıcı</h2>
-          <p className="text-sm text-white/50 mt-1">Günlere tıklayarak menü oluşturun</p>
+          <p className="text-sm text-white/50 mt-1">Günlere tıklayarak öğle, akşam ve ara öğün planlarını oluşturun</p>
         </div>
         <div className="flex items-center bg-white/5 rounded-xl p-1 border border-white/10">
           <button

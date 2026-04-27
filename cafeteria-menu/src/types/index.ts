@@ -1,6 +1,10 @@
 // src/types/index.ts
 
-export type CategoryKey = 'soups' | 'mainCourses' | 'sideDishes' | 'complements';
+export type CategoryKey = 'soups' | 'mainCourses' | 'sideDishes' | 'complements' | 'snacks';
+
+export type MainMealKey = 'lunch' | 'dinner';
+export type PlannerMealKey = MainMealKey | 'snack';
+export type MealCourseField = 'soup' | 'mainCourse' | 'sideDish' | 'complement';
 
 export interface FoodItem {
   id: string;
@@ -9,19 +13,30 @@ export interface FoodItem {
   tags?: string[];
 }
 
+export interface FourCourseMeal {
+  soup: string | null;
+  mainCourse: string | null;
+  sideDish: string | null;
+  complement: string | null;
+}
+
 export interface DailyMenu {
   date: string; // ISO date string YYYY-MM-DD
-  soup: string | null;       // FoodItem id
-  mainCourse: string | null; // FoodItem id
-  sideDish: string | null;   // FoodItem id
-  complement: string | null; // FoodItem id
+  lunch: FourCourseMeal;
+  dinner: FourCourseMeal;
+  snack: string | null; // FoodItem id
+}
+
+export interface ConflictEntry {
+  date: string;
+  mealKey: MainMealKey;
 }
 
 export interface ConflictWarning {
   itemId: string;
   itemName: string;
-  conflictType: 'weekly' | 'monthly';
-  conflictDates: string[];
+  conflictType: 'daily' | 'weekly' | 'monthly';
+  conflicts: ConflictEntry[];
 }
 
 export interface CategoryMeta {
