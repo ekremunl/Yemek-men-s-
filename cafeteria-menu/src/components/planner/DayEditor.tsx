@@ -85,6 +85,7 @@ export default function DayEditor({ date, onClose }: Props) {
   const menu = menus.find((m) => m.date === date);
   const d = parseDate(date);
   const dateLabel = formatDateLabelTR(d);
+  const isWeekend = d.getDay() === 0 || d.getDay() === 6;
 
   const snackItems = useMemo(
     () => foodItems.filter((item) => item.category === 'snacks'),
@@ -116,6 +117,12 @@ export default function DayEditor({ date, onClose }: Props) {
             4 kap: {COURSE_LABELS_TR.soup}, {COURSE_LABELS_TR.mainCourse}, {COURSE_LABELS_TR.sideDish},{' '}
             {COURSE_LABELS_TR.complement}
           </p>
+          {isWeekend && mealKey === 'lunch' && (
+            <p className="text-xs text-amber-300/80 mt-2">
+              Hafta sonlarında {COURSE_LABELS_TR.soup}, {COURSE_LABELS_TR.sideDish} ve {COURSE_LABELS_TR.complement}{' '}
+              seçimi otomatik olarak akşam yemeğine de uygulanır. {COURSE_LABELS_TR.mainCourse} bağımsız kalır.
+            </p>
+          )}
         </div>
 
         {MAIN_MEAL_CATEGORIES.map((category) => {

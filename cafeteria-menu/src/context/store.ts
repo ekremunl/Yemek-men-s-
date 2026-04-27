@@ -52,6 +52,45 @@ type LegacyDailyMenu = {
   complement?: string | null;
 };
 
+const WEEKEND_SYNC_FIELDS: MealCourseField[] = ['soup', 'sideDish', 'complement'];
+
+function isWeekendDate(date: string): boolean {
+  const dayOfWeek = parseDate(date).getDay();
+  return dayOfWeek === 0 || dayOfWeek === 6;
+}
+
+function moveFoodItemToEnd(foodItems: FoodItem[], itemId: string): FoodItem[] {
+  const selectedItem = foodItems.find((item) => item.id === itemId);
+  if (!selectedItem) return foodItems;
+
+  return [...foodItems.filter((item) => item.id !== itemId), selectedItem];
+}
+
+function buildUpdatedMenu(
+  menu: DailyMenu,
+  date: string,
+  mealKey: MainMealKey,
+  field: MealCourseField,
+  itemId: string | null
+): DailyMenu {
+  const updatedMenu: DailyMenu = {
+    ...menu,
+    [mealKey]: {
+      ...menu[mealKey],
+      [field]: itemId,
+    },
+  };
+
+  if (mealKey === 'lunch' && WEEKEND_SYNC_FIELDS.includes(field) && isWeekendDate(date)) {
+    updatedMenu.dinner = {
+      ...updatedMenu.dinner,
+      [field]: itemId,
+    };
+  }
+
+  return updatedMenu;
+}
+
 function isFourCourseMeal(value: unknown): value is FourCourseMeal {
   if (!value || typeof value !== 'object') return false;
   return MEAL_COURSE_FIELDS.every((field) => field in (value as Record<string, unknown>));
@@ -172,24 +211,23 @@ export const useAppStore = create<AppState>()(
       setMealCourse: (date, mealKey, field, itemId) => {
         set((state) => {
           const existing = state.menus.find((m) => m.date === date);
+          const nextFoodItems = itemId ? moveFoodItemToEnd(state.foodItems, itemId) : state.foodItems;
+
           if (existing) {
             return {
+              foodItems: nextFoodItems,
               menus: state.menus.map((m) =>
                 m.date === date
-                  ? {
-                      ...normalizeMenu(m),
-                      [mealKey]: {
-                        ...normalizeMenu(m)[mealKey],
-                        [field]: itemId,
-                      },
-                    }
+                  ? buildUpdatedMenu(normalizeMenu(m), date, mealKey, field, itemId)
                   : normalizeMenu(m)
               ),
             };
           }
-          const newMenu = createEmptyDailyMenu(date);
-          newMenu[mealKey][field] = itemId;
-          return { menus: [...state.menus, newMenu] };
+          const newMenu = buildUpdatedMenu(createEmptyDailyMenu(date), date, mealKey, field, itemId);
+          return {
+            foodItems: nextFoodItems,
+            menus: [...state.menus, newMenu],
+          };
         });
 
         // Check conflicts for main course
@@ -223,8 +261,11 @@ export const useAppStore = create<AppState>()(
       setSnack: (date, itemId) => {
         set((state) => {
           const existing = state.menus.find((m) => m.date === date);
+          const nextFoodItems = itemId ? moveFoodItemToEnd(state.foodItems, itemId) : state.foodItems;
+
           if (existing) {
             return {
+              foodItems: nextFoodItems,
               menus: state.menus.map((m) =>
                 m.date === date ? { ...normalizeMenu(m), snack: itemId } : normalizeMenu(m)
               ),
@@ -232,7 +273,10 @@ export const useAppStore = create<AppState>()(
           }
           const newMenu = createEmptyDailyMenu(date);
           newMenu.snack = itemId;
-          return { menus: [...state.menus, newMenu] };
+          return {
+            foodItems: nextFoodItems,
+            menus: [...state.menus, newMenu],
+          };
         });
       },
 
