@@ -11,28 +11,56 @@ export function generateId(): string {
   return Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
 }
 
+export function createLocalDate(year: number, month: number, day: number, hour = 12): Date {
+  return new Date(year, month, day, hour, 0, 0, 0);
+}
+
 export function getDaysInMonth(year: number, month: number): number {
-  return new Date(year, month + 1, 0).getDate();
+  return createLocalDate(year, month + 1, 0).getDate();
 }
 
 export function getFirstDayOfMonth(year: number, month: number): number {
   // Returns 0=Sun...6=Sat, adjusted so Monday=0
-  const day = new Date(year, month, 1).getDay();
+  const day = createLocalDate(year, month, 1).getDay();
   return day === 0 ? 6 : day - 1;
 }
 
 export function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function getCalendarDateKey(year: number, month: number, day: number): string {
+  return formatDate(createLocalDate(year, month, day));
 }
 
 export function parseDate(dateStr: string): Date {
   const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d);
+  return createLocalDate(y, m - 1, d);
+}
+
+export function getTodayDateKey(): string {
+  return formatDate(new Date());
+}
+
+export function getMonthDayEntries(year: number, month: number) {
+  const daysInMonth = getDaysInMonth(year, month);
+  return Array.from({ length: daysInMonth }, (_, i) => {
+    const day = i + 1;
+    const date = createLocalDate(year, month, day);
+    return {
+      day,
+      dateStr: getCalendarDateKey(year, month, day),
+      dayName: DAY_NAMES_TR_FULL[(date.getDay() + 6) % 7],
+    };
+  });
 }
 
 export function getWeekNumber(dateStr: string): number {
   const d = parseDate(dateStr);
-  const firstDay = new Date(d.getFullYear(), d.getMonth(), 1);
+  const firstDay = createLocalDate(d.getFullYear(), d.getMonth(), 1);
   const dayOfMonth = d.getDate();
   const firstDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
   return Math.ceil((dayOfMonth + firstDayOfWeek) / 7);
