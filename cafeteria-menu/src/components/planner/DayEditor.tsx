@@ -12,7 +12,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { useAppStore } from '@/context/store';
-import { CategoryKey, MainMealKey, MealCourseField, PlannerMealKey } from '@/types';
+import { CategoryKey, MainMealKey, PlannerMealKey } from '@/types';
 import { CATEGORY_META } from '@/lib/seedData';
 import {
   CATEGORY_TO_COURSE_FIELD,
@@ -53,6 +53,11 @@ const MEAL_TAB_STYLES: Record<PlannerMealKey, string> = {
   dinner: 'data-[active=true]:bg-red-500/20 data-[active=true]:text-red-300 data-[active=true]:border-red-500/40',
   snack: 'data-[active=true]:bg-violet-500/20 data-[active=true]:text-violet-300 data-[active=true]:border-violet-500/40',
 };
+
+const MAIN_MEAL_CATEGORIES = CATEGORY_META.filter(
+  (category): category is (typeof CATEGORY_META)[number] & { key: Exclude<CategoryKey, 'snacks'> } =>
+    category.key !== 'snacks'
+);
 
 interface Props {
   date: string;
@@ -113,7 +118,7 @@ export default function DayEditor({ date, onClose }: Props) {
           </p>
         </div>
 
-        {CATEGORY_META.filter((category) => category.key !== 'snacks').map((category) => {
+        {MAIN_MEAL_CATEGORIES.map((category) => {
           const field = CATEGORY_TO_COURSE_FIELD[category.key];
           const items = foodItems.filter((item) => item.category === category.key);
           const selected = meal?.[field] || '';

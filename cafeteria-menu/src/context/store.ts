@@ -57,8 +57,12 @@ function isFourCourseMeal(value: unknown): value is FourCourseMeal {
   return MEAL_COURSE_FIELDS.every((field) => field in (value as Record<string, unknown>));
 }
 
+function isCurrentDailyMenu(menu: DailyMenu | LegacyDailyMenu): menu is DailyMenu {
+  return 'lunch' in menu && isFourCourseMeal(menu.lunch);
+}
+
 function normalizeMenu(menu: DailyMenu | LegacyDailyMenu): DailyMenu {
-  if ('lunch' in menu && isFourCourseMeal(menu.lunch)) {
+  if (isCurrentDailyMenu(menu)) {
     const dinner = 'dinner' in menu && isFourCourseMeal(menu.dinner) ? menu.dinner : createEmptyFourCourseMeal();
     return {
       date: menu.date,
@@ -78,13 +82,14 @@ function normalizeMenu(menu: DailyMenu | LegacyDailyMenu): DailyMenu {
     };
   }
 
+  const legacyMenu = menu as LegacyDailyMenu;
   return {
-    date: menu.date,
+    date: legacyMenu.date,
     lunch: {
-      soup: menu.soup ?? null,
-      mainCourse: menu.mainCourse ?? null,
-      sideDish: menu.sideDish ?? null,
-      complement: menu.complement ?? null,
+      soup: legacyMenu.soup ?? null,
+      mainCourse: legacyMenu.mainCourse ?? null,
+      sideDish: legacyMenu.sideDish ?? null,
+      complement: legacyMenu.complement ?? null,
     },
     dinner: createEmptyFourCourseMeal(),
     snack: null,
