@@ -78,6 +78,8 @@ export const SEED_DATA: FoodItem[] = [
   { id: 'm16', name: 'Kapuska', category: 'mainCourses', tags: ['beef', 'vegetable'] },
   { id: 'm17', name: 'Etli Biber Dolması', category: 'mainCourses', tags: ['beef', 'traditional'] },
   { id: 'm18', name: 'Sogan Kebabı', category: 'mainCourses', tags: ['beef'] },
+  { id: 'm19', name: 'Yeşil Mercimek Yemeği', category: 'mainCourses', tags: ['legume', 'vegetarian'] },
+  { id: 'm20', name: 'Barbunya Yemeği', category: 'mainCourses', tags: ['legume', 'vegetarian', 'traditional'] },
 
   // Side Dishes
   { id: 'd1', name: 'Pirinç Pilavı', category: 'sideDishes', tags: ['rice'] },
