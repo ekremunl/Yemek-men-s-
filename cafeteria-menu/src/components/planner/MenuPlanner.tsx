@@ -19,12 +19,13 @@ export default function MenuPlanner() {
   }));
 
   const existingMenus = getMonthMenus(menus, currentYear, currentMonth);
+  const selectedMonthLabel = `${MONTH_NAMES_TR[currentMonth]} ${currentYear}`;
 
   const handleAutoGenerate = () => {
     if (
       existingMenus.length > 0 &&
       !window.confirm(
-        `${MONTH_NAMES_TR[currentMonth]} ${currentYear} için mevcut planlar yenilensin mi? Bu işlem bu aya ait menüleri yeniden oluşturur.`
+        `${selectedMonthLabel} için mevcut planlar yenilensin mi? Bu işlem yalnızca seçili aya ait menüleri yeniden oluşturur.`
       )
     ) {
       return;
@@ -38,7 +39,12 @@ export default function MenuPlanner() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-xl font-bold text-white">Aylık Menü Planlayıcı</h2>
-          <p className="text-sm text-white/50 mt-1">Günlere tıklayarak öğle, akşam ve ara öğün planlarını oluşturun</p>
+          <p className="text-sm text-white/50 mt-1">
+            Günlere tıklayarak öğle, akşam ve ara öğün planlarını oluşturun
+          </p>
+          <p className="text-xs text-emerald-300/80 mt-2">
+            Seçili ay: <span className="font-semibold text-emerald-200">{selectedMonthLabel}</span>
+          </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <button
@@ -46,7 +52,7 @@ export default function MenuPlanner() {
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors shadow-lg shadow-emerald-900/20"
           >
             <Sparkles className="w-4 h-4" />
-            <span>Dengeli Aylık Menü Oluştur</span>
+            <span>{selectedMonthLabel} Menüsünü Oluştur</span>
           </button>
           <div className="flex items-center bg-white/5 rounded-xl p-1 border border-white/10">
             <button

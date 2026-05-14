@@ -60,13 +60,6 @@ function isWeekendDate(date: string): boolean {
   return dayOfWeek === 0 || dayOfWeek === 6;
 }
 
-function moveFoodItemToEnd(foodItems: FoodItem[], itemId: string): FoodItem[] {
-  const selectedItem = foodItems.find((item) => item.id === itemId);
-  if (!selectedItem) return foodItems;
-
-  return [...foodItems.filter((item) => item.id !== itemId), selectedItem];
-}
-
 function buildUpdatedMenu(
   menu: DailyMenu,
   date: string,
@@ -225,11 +218,6 @@ function getWeekKey(dateStr: string): string {
   const month = String(startOfWeek.getMonth() + 1).padStart(2, '0');
   const dayOfMonth = String(startOfWeek.getDate()).padStart(2, '0');
   return `${year}-${month}-${dayOfMonth}`;
-}
-
-function isWeekendDate(dateStr: string): boolean {
-  const day = parseDate(dateStr).getDay();
-  return day === 0 || day === 6;
 }
 
 function countTagOverlap(tagsA: string[] | undefined, tagsB: string[] | undefined): number {
@@ -436,7 +424,7 @@ export const useAppStore = create<AppState>()(
       setMealCourse: (date, mealKey, field, itemId) => {
         set((state) => {
           const existing = state.menus.find((m) => m.date === date);
-          const nextFoodItems = itemId ? moveFoodItemToEnd(state.foodItems, itemId) : state.foodItems;
+          const nextFoodItems = itemId ? moveItemToCategoryEnd(state.foodItems, itemId) : state.foodItems;
 
           if (existing) {
             return {
@@ -486,7 +474,7 @@ export const useAppStore = create<AppState>()(
       setSnack: (date, itemId) => {
         set((state) => {
           const existing = state.menus.find((m) => m.date === date);
-          const nextFoodItems = itemId ? moveFoodItemToEnd(state.foodItems, itemId) : state.foodItems;
+          const nextFoodItems = itemId ? moveItemToCategoryEnd(state.foodItems, itemId) : state.foodItems;
 
           if (existing) {
             return {
