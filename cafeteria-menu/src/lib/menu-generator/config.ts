@@ -15,6 +15,12 @@ export interface ScoringWeights {
   sameMealProteinDup: number;
   /** `popularity` alanı için bonus çarpanı. */
   popularity: number;
+  /**
+   * Önerilen eşlikçi bonusu. Diğer yumuşak cezaların (tekrar, kullanım, eşleşme) toplamından
+   * büyük tutulur: öneri listesindeki yemek uygunsa neredeyse her zaman o seçilir.
+   * Sert kurallar bundan bağımsız olarak önceliklidir.
+   */
+  companion: number;
   /** Çeşitlilik için rastgele gürültü büyüklüğü. */
   randomness: number;
 }
@@ -106,6 +112,7 @@ export const DEFAULT_CONFIG: Omit<GeneratorConfig, 'seed'> = {
     sameDayIngredientOverlap: 3,
     sameMealProteinDup: 3,
     popularity: 1,
+    companion: 10,
     randomness: 2,
   },
   maxAttempts: 8,

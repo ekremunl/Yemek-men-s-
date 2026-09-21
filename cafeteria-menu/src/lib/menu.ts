@@ -275,6 +275,7 @@ export function foodItemToDish(item: FoodItem): Dish | null {
     tags: unique([...baseTags, ...engineTags]),
     incompatibleWithTags: unique(incompatible),
     mainIngredients: unique([...(item.mainIngredients ?? []), ...inferIngredients(item)]),
+    suggestedCompanionIds: item.suggestedCompanions?.length ? [...item.suggestedCompanions] : undefined,
   };
 }
 

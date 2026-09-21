@@ -108,6 +108,28 @@ async function main() {
     assert.deepEqual(validateDailyMenus(october, state().foodItems), []);
   });
 
+  test('Önerilen eşlikçiler: temizlenerek kaydedilir; silinen yemek öneri listelerinden çıkarılır', () => {
+    state().addFoodItem('Deneme Ana Yemek', 'mainCourses');
+    state().addFoodItem('Deneme Çorbası', 'soups');
+    const mainId = state().foodItems.find((i) => i.name === 'Deneme Ana Yemek')!.id;
+    const soupId = state().foodItems.find((i) => i.name === 'Deneme Çorbası')!.id;
+
+    state().updateFoodItem(mainId, { suggestedCompanions: [soupId, ' ', soupId, 's2'] });
+    assert.deepEqual(state().foodItems.find((i) => i.id === mainId)!.suggestedCompanions, [soupId, 's2']);
+    const persisted = JSON.parse(memory.get(STORAGE_KEY)!).state.foodItems.find((i: FoodItem) => i.id === mainId);
+    assert.deepEqual(persisted.suggestedCompanions, [soupId, 's2'], 'localStorage kaydına yazılmalı');
+
+    state().removeFoodItem(soupId);
+    assert.deepEqual(state().foodItems.find((i) => i.id === mainId)!.suggestedCompanions, ['s2'], 'boşta kimlik kalmamalı');
+
+    // Öneri listeli ana yemek varken üretim hata vermez ve kurallara uyar.
+    const errorsBefore = state().toasts.filter((t) => t.type === 'error').length;
+    state().generateBalancedMonthMenus(2026, 9);
+    assert.equal(state().toasts.filter((t) => t.type === 'error').length, errorsBefore);
+    const october = state().menus.filter((m) => m.date.startsWith('2026-10'));
+    assert.deepEqual(validateDailyMenus(october, state().foodItems), []);
+  });
+
   test('Pratik yemek kalmayınca: Türkçe hata bildirimi, mevcut menüler bozulmaz', () => {
     const before = JSON.stringify(state().menus);
     const practical = state().foodItems.filter((i) => PRACTICAL_NAMES.includes(i.name));

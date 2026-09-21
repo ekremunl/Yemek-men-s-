@@ -74,7 +74,14 @@ export function scoreCandidate(
     }
   }
 
-  // 7) Tercih puanı + çeşitlilik için gürültü.
+  // 7) Önerilen eşlikçiler: öğündeki bir yemek bu adayı öneriyorsa (ana yemek → çorba/yan/tamamlayıcı),
+  //    ya da aday ana yemek öğündeki hazır yemekleri öneriyorsa (hafta sonu akşamı senkron yemekler) bonus.
+  const suggests = (a: Dish, b: Dish) => a.suggestedCompanionIds?.includes(b.id) ?? false;
+  if (meal.some((other) => suggests(other, dish) || suggests(dish, other))) {
+    score += w.companion;
+  }
+
+  // 8) Tercih puanı + çeşitlilik için gürültü.
   score += w.popularity * (dish.popularity ?? 0);
   score += rng() * w.randomness;
 

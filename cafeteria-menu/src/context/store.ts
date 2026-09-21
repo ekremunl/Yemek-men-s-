@@ -27,6 +27,8 @@ interface Toast {
 export interface FoodItemMetadataChanges {
   tags?: string[];
   mainIngredients?: string[];
+  /** Ana yemekler için önerilen eşlikçi yemeklerin kimlikleri. */
+  suggestedCompanions?: string[];
 }
 
 const cleanList = (values: string[]): string[] =>
@@ -259,21 +261,31 @@ export const useAppStore = create<AppState>()(
                   ...(changes.mainIngredients !== undefined
                     ? { mainIngredients: cleanList(changes.mainIngredients) }
                     : {}),
+                  ...(changes.suggestedCompanions !== undefined
+                    ? { suggestedCompanions: cleanList(changes.suggestedCompanions) }
+                    : {}),
                 }
               : item
           ),
         }));
         get().addToast({
           type: 'success',
-          title: 'Etiketler Kaydedildi',
-          message: `"${target.name}" için etiketler güncellendi.`,
+          title: 'Kaydedildi',
+          message: `"${target.name}" için etiketler ve eşlikçiler güncellendi.`,
         });
       },
 
       removeFoodItem: (id) => {
         // Also clear from menus
         set((state) => ({
-          foodItems: state.foodItems.filter((f) => f.id !== id),
+          // Silinen yemeği öneri listelerinden de çıkar (boşta kalan kimlik kalmasın).
+          foodItems: state.foodItems
+            .filter((f) => f.id !== id)
+            .map((f) =>
+              f.suggestedCompanions?.includes(id)
+                ? { ...f, suggestedCompanions: f.suggestedCompanions.filter((companionId) => companionId !== id) }
+                : f
+            ),
           menus: state.menus.map((menu) => {
             const normalizedMenu = normalizeMenu(menu);
             if (!getAllMenuItemIds(normalizedMenu).includes(id)) return normalizedMenu;

@@ -15,6 +15,11 @@ export interface FoodItem {
   incompatibleWithTags?: string[];
   /** Baskın bileşenler (ör. ['mercimek']). Aynı öğünde çakışan bileşen engellenir. */
   mainIngredients?: string[];
+  /**
+   * Yalnızca ana yemekler için: yanına önerilen çorba / yan yemek / tamamlayıcıların kimlikleri.
+   * Otomatik menü, her kategoride bu listeden birini tercih eder (kurallara aykırı değilse).
+   */
+  suggestedCompanions?: string[];
 }
 
 export interface FourCourseMeal {

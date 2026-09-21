@@ -40,6 +40,11 @@ export interface Dish {
   mainIngredients?: string[];
   /** 0..1 arası isteğe bağlı tercih puanı; skorlamada küçük bir bonus verir. */
   popularity?: number;
+  /**
+   * Bu yemekle aynı öğünde tercih edilen yemeklerin id'leri (ör. bir ana yemeğin
+   * önerilen çorba/yan/tamamlayıcıları). Sert kural değildir; skorlamada güçlü bonus verir.
+   */
+  suggestedCompanionIds?: string[];
 }
 
 /** Bir öğün: kategori başına en fazla bir yemek. */

@@ -196,6 +196,54 @@ test('getEffectiveTags: kayıtlı etiket varsa o, yoksa (veya boşsa) isimden ta
   assert.deepEqual(getEffectiveTags({ ...base, tags: ['vegetable'] }), ['vegetable']);
 });
 
+test('Önerilen eşlikçiler: ana yemeğin yanına listeden biri seçilir; sert kurallar yine geçerli', () => {
+  // [çorbalar, yan yemekler, tamamlayıcılar]
+  const COMPANIONS: Record<string, string[]> = {
+    m4: ['s2', 's11', 'd1', 'd2', 'c6', 'c4'], // Izgara Köfte
+    m3: ['s4', 's11', 'd9', 'd1', 'c5', 'c1'], // Tavuk Sote
+    m21: ['s7', 's2', 'd11', 'd12', 'c2', 'c1'], // Mantı (yanına pilav/makarna gelmez → salata)
+    m1: ['s2', 'd1', 'c4', 'c5'], // Kuru Fasulye (yalnızca pilavla servis edilir)
+    m20: ['d1', 's2', 'zzz-silinmis-yemek'], // Barbunya: pilav KURALA AYKIRI (makarna gerekir) + olmayan id
+  };
+  const pool: FoodItem[] = SEED_DATA.map((item) =>
+    COMPANIONS[item.id] ? { ...item, suggestedCompanions: COMPANIONS[item.id] } : item,
+  );
+
+  let total = 0;
+  let matched = 0;
+  const perMain = new Map<string, [number, number]>();
+  for (let month = 0; month < 12; month++) {
+    for (let seed = 1; seed <= 6; seed++) {
+      const { menus } = generateAutoMonthMenus(pool, 2026, month, [], { seed });
+      // Öneri ne olursa olsun tüm sert kurallar (eski eşleşme kuralları dahil) sağlanmalı:
+      check(menus, pool, `companions ${month + 1}/${seed}`);
+
+      for (const menu of menus) {
+        if ([0, 6].includes(weekdayOf(menu.date))) continue; // hafta sonu akşamı senkron yemeklerle sabitlenir
+        for (const key of MEALS) {
+          const meal = menu[key];
+          const list = COMPANIONS[meal.mainCourse!];
+          if (!list || meal.mainCourse === 'm20') continue; // m20 kasıtlı çelişkili öneri
+          for (const field of ['soup', 'sideDish', 'complement'] as const) {
+            const relevant = list.filter((id) => byId(pool).get(id)?.category === { soup: 'soups', sideDish: 'sideDishes', complement: 'complements' }[field]);
+            if (relevant.length === 0) continue;
+            total++;
+            const hit = relevant.includes(meal[field]!);
+            if (hit) matched++;
+            const [t, h] = perMain.get(meal.mainCourse!) ?? [0, 0];
+            perMain.set(meal.mainCourse!, [t + 1, h + (hit ? 1 : 0)]);
+          }
+        }
+      }
+    }
+  }
+  const ratio = matched / total;
+  console.log(`    öneriye uyum: ${matched}/${total} (%${(ratio * 100).toFixed(1)}) — ` +
+    Array.from(perMain).map(([id, [t, h]]) => `${byId(pool).get(id)!.name}: ${h}/${t}`).join(', '));
+  assert.ok(total > 100, 'yeterli örnek yok');
+  assert.ok(ratio >= 0.95, `öneriye uyum çok düşük: %${(ratio * 100).toFixed(1)}`);
+});
+
 test('Adapter ve dönüştürücüler', () => {
   const dishes = adaptSeedDataToDishes();
   assert.equal(dishes.length, SEED_DATA.filter((i) => i.category !== 'snacks').length);

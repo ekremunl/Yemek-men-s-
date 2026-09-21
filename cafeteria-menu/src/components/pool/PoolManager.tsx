@@ -57,6 +57,12 @@ const CAT_COLORS: Record<CategoryKey, { bg: string; border: string; badge: strin
 
 type CategoryColors = (typeof CAT_COLORS)[CategoryKey];
 
+const COMPANION_CATEGORIES: { key: CategoryKey; title: string }[] = [
+  { key: 'soups', title: 'Çorba' },
+  { key: 'sideDishes', title: 'Yan yemek' },
+  { key: 'complements', title: 'Tamamlayıcı' },
+];
+
 /** Bir yemeğin etiketlerini ve baskın bileşenlerini düzenleyen satır içi panel. */
 function TagEditor({
   item,
@@ -68,15 +74,25 @@ function TagEditor({
   onClose: () => void;
 }) {
   const updateFoodItem = useAppStore((s) => s.updateFoodItem);
+  const foodItems = useAppStore((s) => s.foodItems);
+  const isMain = item.category === 'mainCourses';
   const seedItem = SEED_DATA.find((seed) => seed.id === item.id);
   const hasStoredTags = Boolean(item.tags?.length);
 
   // Kayıtlı etiket yoksa isimden tahmin edilenler seçili başlar; "Kaydet" ile kalıcı olur.
   const [tags, setTags] = useState<string[]>(() => getEffectiveTags(item));
   const [ingredients, setIngredients] = useState((item.mainIngredients ?? []).join(', '));
+  // Havuzdan silinmiş yemeklerin kimlikleri baştan ayıklanır.
+  const [companions, setCompanions] = useState<string[]>(() =>
+    (item.suggestedCompanions ?? []).filter((id) => foodItems.some((food) => food.id === id))
+  );
+  const [showCompanions, setShowCompanions] = useState(companions.length > 0);
 
   const toggle = (key: string) =>
     setTags((prev) => (prev.includes(key) ? prev.filter((tag) => tag !== key) : [...prev, key]));
+
+  const toggleCompanion = (id: string) =>
+    setCompanions((prev) => (prev.includes(id) ? prev.filter((companionId) => companionId !== id) : [...prev, id]));
 
   const customTags = tags.filter((tag) => !isKnownTag(tag));
   const groups = TAG_GROUPS.filter(
@@ -84,7 +100,11 @@ function TagEditor({
   );
 
   const handleSave = () => {
-    updateFoodItem(item.id, { tags, mainIngredients: ingredients.split(',') });
+    updateFoodItem(item.id, {
+      tags,
+      mainIngredients: ingredients.split(','),
+      ...(isMain ? { suggestedCompanions: companions } : {}),
+    });
     onClose();
   };
 
@@ -159,6 +179,63 @@ function TagEditor({
           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
         />
       </div>
+
+      {isMain && (
+        <div className="rounded-lg border border-white/10 bg-white/[0.03]">
+          <button
+            type="button"
+            onClick={() => setShowCompanions((open) => !open)}
+            aria-expanded={showCompanions}
+            className="flex w-full items-center justify-between px-3 py-2 text-[11px] font-medium text-white/60 hover:text-white/90 transition-colors"
+          >
+            <span>Önerilen eşlikçiler{companions.length > 0 ? ` · ${companions.length} seçili` : ''}</span>
+            <span aria-hidden>{showCompanions ? '−' : '+'}</span>
+          </button>
+
+          {showCompanions && (
+            <div className="px-3 pb-3 space-y-3">
+              <p className="text-[11px] leading-relaxed text-white/35">
+                Menü oluşturulurken bu ana yemeğin yanına her kategoriden buradaki yemeklerden biri tercih edilir.
+                Kurallara aykırıysa (aynı bileşen, aynı gün tekrar, hafta sonu senkronu vb.) başka yemek seçilir.
+                Her kategoride 2-3 öneri en iyi sonucu verir; tek öneri aynı gün öğle ve akşam çakışabilir.
+              </p>
+              {COMPANION_CATEGORIES.map(({ key, title }) => {
+                const options = foodItems.filter((food) => food.category === key);
+                const count = options.filter((option) => companions.includes(option.id)).length;
+                return (
+                  <div key={key}>
+                    <p className="text-[11px] font-medium text-white/40 mb-1.5">
+                      {title}
+                      {count > 0 ? ` · ${count}` : ''}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+                      {options.map((option) => {
+                        const active = companions.includes(option.id);
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => toggleCompanion(option.id)}
+                            className={cn(
+                              'text-xs px-2 py-1 rounded-full border transition-colors',
+                              active
+                                ? colors.badge
+                                : 'border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80'
+                            )}
+                          >
+                            {option.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="text-[11px] leading-relaxed text-white/35 space-y-0.5">
         <p>• Aynı gün öğle ve akşamda aynı protein gelmez; aynı protein üst üste en fazla 2 gün seçilir.</p>
@@ -252,7 +329,7 @@ function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
       </div>
 
       {/* List */}
-      <div className={cn('flex-1 overflow-y-auto px-4 py-2 space-y-1 scrollbar-thin', editingId ? 'max-h-[30rem]' : 'max-h-52')}>
+      <div className={cn('flex-1 overflow-y-auto px-4 py-2 space-y-1 scrollbar-thin', editingId ? 'max-h-[40rem]' : 'max-h-52')}>
         {items.length === 0 ? (
           <p className="text-center text-white/30 text-xs py-4">Ürün bulunamadı</p>
         ) : (
@@ -261,6 +338,10 @@ function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
             const isEditing = editingId === item.id;
             const hasStoredTags = Boolean(item.tags?.length);
             const shownTags = editable ? getEffectiveTags(item) : [];
+            const companionCount =
+              categoryKey === 'mainCourses'
+                ? (item.suggestedCompanions ?? []).filter((id) => foodItems.some((food) => food.id === id)).length
+                : 0;
 
             return (
               <div key={item.id} className="rounded-lg hover:bg-white/5 transition-colors">
@@ -290,7 +371,7 @@ function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
                   </button>
                 </div>
 
-                {editable && !isEditing && shownTags.length > 0 && (
+                {editable && !isEditing && (shownTags.length > 0 || companionCount > 0) && (
                   <div className="flex flex-wrap gap-1 px-3 pb-2 -mt-1">
                     {shownTags.slice(0, 4).map((tag) => (
                       <span
@@ -307,10 +388,18 @@ function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
                     {shownTags.length > 4 && (
                       <span className="text-[10px] text-white/30 px-1">+{shownTags.length - 4}</span>
                     )}
+                    {companionCount > 0 && (
+                      <span
+                        title="Önerilen eşlikçi sayısı"
+                        className="text-[10px] px-1.5 py-0.5 rounded-full border border-white/15 text-white/60"
+                      >
+                        ★ {companionCount} eşlikçi
+                      </span>
+                    )}
                   </div>
                 )}
 
-                {editable && !isEditing && shownTags.length === 0 && (
+                {editable && !isEditing && shownTags.length === 0 && companionCount === 0 && (
                   <button
                     type="button"
                     onClick={() => setEditingId(item.id)}
@@ -357,7 +446,8 @@ export default function PoolManager() {
         <h2 className="text-xl font-bold text-white">Ürün Havuzu Yönetimi</h2>
         <p className="text-sm text-white/50 mt-1">
           Kategorilere yemek ekleyin veya çıkarın. Etiket simgesiyle (<Tag className="inline w-3 h-3 -mt-0.5" />) yemeğin
-          etiketlerini düzenleyin; otomatik menü bu etiketlere göre kural uygular.
+          etiketlerini düzenleyin; otomatik menü bu etiketlere göre kural uygular. Ana yemeklerde ayrıca yanına önerilen çorba, yan yemek ve
+          tamamlayıcıları seçebilirsiniz.
         </p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
