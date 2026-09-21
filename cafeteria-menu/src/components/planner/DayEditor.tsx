@@ -126,7 +126,7 @@ export default function DayEditor({ date, onClose }: Props) {
         </div>
 
         {MAIN_MEAL_CATEGORIES.map((category) => {
-          const field = CATEGORY_TO_COURSE_FIELD[category.key];
+          const field = CATEGORY_TO_COURSE_FIELD[category.key] as MealCourseField;
           const items = foodItems.filter((item) => item.category === category.key);
           const selected = meal?.[field] || '';
           const isMainConflict = field === 'mainCourse' && conflicts.length > 0;
