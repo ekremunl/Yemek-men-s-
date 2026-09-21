@@ -12,7 +12,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { useAppStore } from '@/context/store';
-import { CategoryKey, MainMealKey, PlannerMealKey } from '@/types';
+import { CategoryKey, MainMealKey, PlannerMealKey, MealCourseField } from '@/types';
 import { CATEGORY_META } from '@/lib/seedData';
 import {
   CATEGORY_TO_COURSE_FIELD,
