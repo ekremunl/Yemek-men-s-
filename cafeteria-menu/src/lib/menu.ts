@@ -1,13 +1,40 @@
 import { generateMonthlyMenu, type Dish, type DayMenu } from './menu-generator';
 import { initialDishes } from './seedData';
 
+// Projenin arayüz bileşenlerinin (ExportPanel vb.) beklediği sabitler ve tanımlamalar
+export const COURSE_LABELS_TR: Record<string, string> = {
+  corba: 'Çorba',
+  ana_yemek: 'Ana Yemek',
+  yan_urun: 'Yan Ürün',
+  tatli_meyve: 'Tatlı / Meyve',
+  main: 'Ana Yemek',
+  side: 'Yan Yemek',
+  soup: 'Çorba',
+  dessert: 'Tatlı'
+};
+
+export const MEAL_LABELS_TR: Record<string, string> = {
+  lunch: 'Öğle Yemeği',
+  dinner: 'Akşam Yemeği'
+};
+
+export const MAIN_MEAL_KEYS = ['lunch', 'dinner'] as const;
+
+// Günün eksiksiz olup olmadığını kontrol eden yardımcı fonksiyon
+export function isDayComplete(dayMenu: any): boolean {
+  if (!dayMenu) return false;
+  return Boolean(
+    dayMenu.lunch?.main || dayMenu.dinner?.main || 
+    (dayMenu.meals && dayMenu.meals.length > 0)
+  );
+}
+
 // 1. SeedData içerisindeki yemekleri yeni algoritmanın Dish formatına çeviren Adapter
 export function adaptSeedDataToDishes(): Dish[] {
   return initialDishes.map((dish: any) => {
     const tags: string[] = [];
 
-    // Kategoriye göre etiket tanımlamaları
-    if (dish.category === 'main') {
+    if (dish.category === 'main' || dish.category === 'ana_yemek') {
       const nameLower = dish.name.toLowerCase();
       if (nameLower.includes('tavuk')) tags.push('tavuk', 'kümes');
       else if (nameLower.includes('köfte') || nameLower.includes('et') || nameLower.includes('kıyma')) tags.push('kırmızı_et');
@@ -22,7 +49,8 @@ export function adaptSeedDataToDishes(): Dish[] {
       name: dish.name,
       category: dish.category,
       tags: tags,
-      incompatibleWithTags: dish.category === 'main' && (dish.name.toLowerCase().includes('manti') || dish.name.toLowerCase().includes('mantı')) ? ['hamur_isi'] : [],
+      incompatibleWithTags: (dish.category === 'main' || dish.category === 'ana_yemek') && 
+        (dish.name.toLowerCase().includes('manti') || dish.name.toLowerCase().includes('mantı')) ? ['hamur_isi'] : [],
       popularity: 3,
       isWeekendSuitable: ['pide', 'hamburger', 'dürüm', 'mantı', 'börek', 'pizza', 'sandwich', 'sandviç'].some(p => dish.name.toLowerCase().includes(p))
     };
