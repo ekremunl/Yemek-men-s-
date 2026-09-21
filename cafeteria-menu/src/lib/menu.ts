@@ -35,6 +35,15 @@ export const COURSE_TO_CATEGORY_KEY: Record<string, string> = {
   snack: 'snacks'
 };
 
+// DayEditor.tsx bileşeninin aradığı ters eşleme
+export const CATEGORY_TO_COURSE_FIELD: Record<string, string> = {
+  soups: 'soup',
+  mainCourses: 'mainCourse',
+  sideDishes: 'sideDish',
+  complements: 'complement',
+  snacks: 'snack'
+};
+
 // 2. Nesne Oluşturucular (Store & Component Fonksiyonları)
 
 export function createEmptyFourCourseMeal() {
