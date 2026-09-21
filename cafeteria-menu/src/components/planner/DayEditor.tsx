@@ -1,4 +1,4 @@
-11// src/components/planner/DayEditor.tsx
+// src/components/planner/DayEditor.tsx
 'use client';
 import { useMemo, useState } from 'react';
 import {
@@ -249,7 +249,7 @@ export default function DayEditor({ date, onClose }: Props) {
               className="px-3 py-2 rounded-lg text-xs text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors"
             >
               Tümünü Temizle
-            </butto n>
+            </button>
             <button
               onClick={onClose}
               className="p-2 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
@@ -257,7 +257,9 @@ export default function DayEditor({ date, onClose }: Props) {
               <X className="w-5 h-5" />
             </button>
           </div>
-        </div><div className="px-6 pt-4">
+        </div>
+
+        <div className="px-6 pt-4">
           <div className="grid grid-cols-3 gap-2 rounded-2xl bg-white/[0.03] p-1 border border-white/10">
             {PLANNER_MEAL_KEYS.map((mealKey) => (
               <button
