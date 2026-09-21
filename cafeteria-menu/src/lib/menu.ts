@@ -1,7 +1,7 @@
 import { generateMonthlyMenu, type Dish, type DayMenu } from './menu-generator';
-import { initialDishes } from './seedData';
+import * as SeedDataModule from './seedData';
 
-// Projenin arayüz bileşenlerinin (ExportPanel vb.) beklediği sabitler ve tanımlamalar
+// 1. Proje bileşenlerinin (CalendarView, ExportPanel, Store) beklediği sabitler ve tipler
 export const COURSE_LABELS_TR: Record<string, string> = {
   corba: 'Çorba',
   ana_yemek: 'Ana Yemek',
@@ -18,24 +18,59 @@ export const MEAL_LABELS_TR: Record<string, string> = {
   dinner: 'Akşam Yemeği'
 };
 
+export const MEAL_SHORT_LABELS_TR: Record<string, string> = {
+  lunch: 'Öğle',
+  dinner: 'Akşam'
+};
+
 export const MAIN_MEAL_KEYS = ['lunch', 'dinner'] as const;
 
-// Günün eksiksiz olup olmadığını kontrol eden yardımcı fonksiyon
-export function isDayComplete(dayMenu: any): boolean {
-  if (!dayMenu) return false;
-  return Boolean(
-    dayMenu.lunch?.main || dayMenu.dinner?.main || 
-    (dayMenu.meals && dayMenu.meals.length > 0)
-  );
+// 2. Eksik Yardımcı Fonksiyonlar
+
+// Boş günlük menü nesnesi oluşturur
+export function createEmptyDailyMenu(): any {
+  return {
+    lunch: { soup: null, main: null, side: null, dessert: null },
+    dinner: { soup: null, main: null, side: null, dessert: null }
+  };
 }
 
-// 1. SeedData içerisindeki yemekleri yeni algoritmanın Dish formatına çeviren Adapter
-export function adaptSeedDataToDishes(): Dish[] {
-  return initialDishes.map((dish: any) => {
-    const tags: string[] = [];
+// Bir günde kaç öğün/yemek girişi yapıldığını sayar
+export function countDayEntries(dayMenu: any): number {
+  if (!dayMenu) return 0;
+  let count = 0;
+  const meals = ['lunch', 'dinner'];
+  for (const meal of meals) {
+    if (dayMenu[meal]) {
+      Object.values(dayMenu[meal]).forEach(item => {
+        if (item) count++;
+      });
+    }
+  }
+  return count;
+}
 
-    if (dish.category === 'main' || dish.category === 'ana_yemek') {
-      const nameLower = dish.name.toLowerCase();
+// Günün eksiksiz olup olmadığını kontrol eder
+export function isDayComplete(dayMenu: any): boolean {
+  return countDayEntries(dayMenu) > 0;
+}
+
+// 3. SeedData Verilerini Güvenli Çekme (export isminden bağımsız)
+function getSeedDishes(): any[] {
+  const seed = SeedDataModule as any;
+  return seed.initialDishes || seed.SEED_DISHES || seed.dishes || seed.default || [];
+}
+
+// 4. SeedData -> Dish Adapter
+export function adaptSeedDataToDishes(): Dish[] {
+  const rawDishes = getSeedDishes();
+  
+  return rawDishes.map((dish: any) => {
+    const tags: string[] = [];
+    const cat = dish.category || dish.type || '';
+    const nameLower = (dish.name || '').toLowerCase();
+
+    if (cat === 'main' || cat === 'ana_yemek') {
       if (nameLower.includes('tavuk')) tags.push('tavuk', 'kümes');
       else if (nameLower.includes('köfte') || nameLower.includes('et') || nameLower.includes('kıyma')) tags.push('kırmızı_et');
       else if (nameLower.includes('balık')) tags.push('balık');
@@ -45,19 +80,19 @@ export function adaptSeedDataToDishes(): Dish[] {
     }
 
     return {
-      id: dish.id,
-      name: dish.name,
-      category: dish.category,
+      id: dish.id || String(Math.random()),
+      name: dish.name || 'İsimsiz Yemek',
+      category: cat,
       tags: tags,
-      incompatibleWithTags: (dish.category === 'main' || dish.category === 'ana_yemek') && 
-        (dish.name.toLowerCase().includes('manti') || dish.name.toLowerCase().includes('mantı')) ? ['hamur_isi'] : [],
+      incompatibleWithTags: (cat === 'main' || cat === 'ana_yemek') && 
+        (nameLower.includes('manti') || nameLower.includes('mantı')) ? ['hamur_isi'] : [],
       popularity: 3,
-      isWeekendSuitable: ['pide', 'hamburger', 'dürüm', 'mantı', 'börek', 'pizza', 'sandwich', 'sandviç'].some(p => dish.name.toLowerCase().includes(p))
+      isWeekendSuitable: ['pide', 'hamburger', 'dürüm', 'mantı', 'börek', 'pizza', 'sandwich', 'sandviç'].some(p => nameLower.includes(p))
     };
   });
 }
 
-// 2. Yeni algoritma ile menü üreten ana fonksiyon
+// 5. Ana Menü Oluşturucu
 export function generateMenu(year?: number, month?: number) {
   const currentDate = new Date();
   const targetYear = year || currentDate.getFullYear();
