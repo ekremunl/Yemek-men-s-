@@ -24,7 +24,7 @@ export const MEAL_SHORT_LABELS_TR: Record<string, string> = {
 };
 
 export const MAIN_MEAL_KEYS = ['lunch', 'dinner'] as const;
-export const PLANNER_MEAL_KEYS = ['lunch', 'dinner'] as const;
+export const PLANNER_MEAL_KEYS = ['lunch', 'dinner', 'snack'] as const;
 export const MEAL_COURSE_FIELDS = ['soup', 'mainCourse', 'sideDish', 'complement'] as const;
 
 export const COURSE_TO_CATEGORY_KEY: Record<string, string> = {
