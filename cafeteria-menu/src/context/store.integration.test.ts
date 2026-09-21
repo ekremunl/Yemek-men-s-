@@ -92,6 +92,22 @@ async function main() {
     assert.equal(saved.state.menus.length, 61);
   });
 
+  test('updateFoodItem: etiket/bileşenler temizlenip kalıcı kaydedilir; sonraki üretim kurallara uyar', () => {
+    state().addFoodItem('Deneme Böreği', 'mainCourses');
+    const id = state().foodItems.find((i) => i.name === 'Deneme Böreği')!.id;
+    state().updateFoodItem(id, { tags: [' dough ', 'dough', 'practical', ''], mainIngredients: [' peynir ', 'peynir', ''] });
+
+    const saved = state().foodItems.find((i) => i.id === id)!;
+    assert.deepEqual(saved.tags, ['dough', 'practical']);
+    assert.deepEqual(saved.mainIngredients, ['peynir']);
+    const persisted = JSON.parse(memory.get(STORAGE_KEY)!).state.foodItems.find((i: FoodItem) => i.id === id);
+    assert.deepEqual(persisted.tags, ['dough', 'practical'], 'localStorage kaydına yazılmalı');
+
+    state().generateBalancedMonthMenus(2026, 9);
+    const october = state().menus.filter((m) => m.date.startsWith('2026-10'));
+    assert.deepEqual(validateDailyMenus(october, state().foodItems), []);
+  });
+
   test('Pratik yemek kalmayınca: Türkçe hata bildirimi, mevcut menüler bozulmaz', () => {
     const before = JSON.stringify(state().menus);
     const practical = state().foodItems.filter((i) => PRACTICAL_NAMES.includes(i.name));

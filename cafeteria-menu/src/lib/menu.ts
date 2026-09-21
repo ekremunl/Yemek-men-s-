@@ -156,7 +156,7 @@ const STARCH_SIDE_TAGS = ['rice', 'pasta', 'bulgur', 'noodle', 'couscous'] as co
  * Etiketi hiç olmayan (kullanıcının havuza elle eklediği) yemekler için
  * isimden etiket çıkarımı. Etiketi olan yemeklere dokunulmaz.
  */
-function inferTagsFromName(item: FoodItem): string[] {
+export function inferTagsFromName(item: FoodItem): string[] {
   const name = item.name.toLocaleLowerCase('tr-TR');
   const tags: string[] = [];
 
@@ -187,6 +187,14 @@ function inferTagsFromName(item: FoodItem): string[] {
     tags.push('vegetable');
   }
   return tags;
+}
+
+/**
+ * Motorun bir yemek için gerçekte kullandığı etiketler: kayıtlı etiket varsa o,
+ * yoksa isimden tahmin edilenler. (Arayüz de aynı bilgiyi gösterir.)
+ */
+export function getEffectiveTags(item: FoodItem): string[] {
+  return item.tags?.length ? item.tags : inferTagsFromName(item);
 }
 
 /** İsimden baskın bileşen çıkarımı (aynı öğünde çakışmasın diye). */
@@ -241,7 +249,7 @@ export function foodItemToDish(item: FoodItem): Dish | null {
   const category = CATEGORY_KEY_TO_DISH_CATEGORY[item.category];
   if (!category) return null;
 
-  const baseTags = item.tags?.length ? item.tags : inferTagsFromName(item);
+  const baseTags = getEffectiveTags(item);
   const engineTags = baseTags.flatMap((tag) => ENGLISH_TO_ENGINE_TAGS[tag] ?? []);
   const incompatible: string[] = [...(item.incompatibleWithTags ?? [])];
 

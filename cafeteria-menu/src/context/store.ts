@@ -23,11 +23,21 @@ interface Toast {
   message: string;
 }
 
+/** Yemeğin motor tarafından kullanılan metadata alanları. */
+export interface FoodItemMetadataChanges {
+  tags?: string[];
+  mainIngredients?: string[];
+}
+
+const cleanList = (values: string[]): string[] =>
+  Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+
 interface AppState {
   // Food pools
   foodItems: FoodItem[];
   addFoodItem: (name: string, category: CategoryKey) => void;
   removeFoodItem: (id: string) => void;
+  updateFoodItem: (id: string, changes: FoodItemMetadataChanges) => void;
 
   // Monthly menus
   menus: DailyMenu[];
@@ -235,6 +245,29 @@ export const useAppStore = create<AppState>()(
           ],
         }));
         get().addToast({ type: 'success', title: 'Eklendi', message: `"${trimmed}" başarıyla eklendi.` });
+      },
+
+      updateFoodItem: (id, changes) => {
+        const target = get().foodItems.find((item) => item.id === id);
+        if (!target) return;
+        set((state) => ({
+          foodItems: state.foodItems.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  ...(changes.tags !== undefined ? { tags: cleanList(changes.tags) } : {}),
+                  ...(changes.mainIngredients !== undefined
+                    ? { mainIngredients: cleanList(changes.mainIngredients) }
+                    : {}),
+                }
+              : item
+          ),
+        }));
+        get().addToast({
+          type: 'success',
+          title: 'Etiketler Kaydedildi',
+          message: `"${target.name}" için etiketler güncellendi.`,
+        });
       },
 
       removeFoodItem: (id) => {

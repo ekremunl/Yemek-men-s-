@@ -14,6 +14,7 @@ import {
   foodItemsToDishes,
   formatMenuGenerationError,
   generateAutoMonthMenus,
+  getEffectiveTags,
   validateDailyMenus,
 } from './menu';
 import { MenuGenerationError } from './menu-generator';
@@ -186,6 +187,13 @@ test('Etiketsiz (elle eklenmiş) yemekler isimden çıkarılan etiketlerle korun
     }
   }
   assert.ok(appeared > 0, 'Etiketsiz "Kıymalı Börek" hiç kullanılmadı (pratik olarak algılanmalıydı)');
+});
+
+test('getEffectiveTags: kayıtlı etiket varsa o, yoksa (veya boşsa) isimden tahmin', () => {
+  const base = { id: 't', name: 'Peynirli Pide', category: 'mainCourses' } as const;
+  assert.deepEqual(getEffectiveTags({ ...base }).sort(), ['carb_heavy', 'dough', 'practical']);
+  assert.deepEqual(getEffectiveTags({ ...base, tags: [] }).sort(), ['carb_heavy', 'dough', 'practical']);
+  assert.deepEqual(getEffectiveTags({ ...base, tags: ['vegetable'] }), ['vegetable']);
 });
 
 test('Adapter ve dönüştürücüler', () => {
