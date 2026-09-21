@@ -81,6 +81,8 @@ interface Decision {
   dayOffset: number; // bu ayın kaçıncı günü (0 tabanlı)
   slot: MealSlot;
   category: DishCategory;
+  /** true → aday aranmaz; öğle öğünündeki yemek aynen kopyalanır (hafta sonu senkronu). */
+  syncFromLunch?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,12 +146,33 @@ function preflight(config: GeneratorConfig, byCategory: Record<DishCategory, Dis
   return { template, warnings };
 }
 
-function buildDecisions(dayCount: number, template: Record<MealSlot, DishCategory[]>): Decision[] {
+function buildDecisions(
+  year: number,
+  month: number,
+  dayCount: number,
+  template: Record<MealSlot, DishCategory[]>,
+  config: GeneratorConfig,
+): Decision[] {
   const decisions: Decision[] = [];
   for (let dayOffset = 0; dayOffset < dayCount; dayOffset++) {
+    const weekday = new Date(Date.UTC(year, month - 1, dayOffset + 1)).getUTCDay();
+    const weekend = weekday === 0 || weekday === 6;
+
     for (const slot of MEAL_SLOTS) {
-      for (const category of CATEGORY_ORDER) {
-        if (template[slot].includes(category)) decisions.push({ dayOffset, slot, category });
+      const categories = CATEGORY_ORDER.filter((c) => template[slot].includes(c));
+
+      // Hafta sonu akşamında senkron kategoriler ÖNCE (zorunlu karar olarak) yerleşir;
+      // böylece ana yemek adayları bu yemeklere göre süzülür.
+      const synced =
+        weekend && slot === 'aksam'
+          ? categories.filter(
+              (c) => config.weekendSyncCategories.includes(c) && template.ogle.includes(c),
+            )
+          : [];
+
+      for (const category of synced) decisions.push({ dayOffset, slot, category, syncFromLunch: true });
+      for (const category of categories) {
+        if (!synced.includes(category)) decisions.push({ dayOffset, slot, category });
       }
     }
   }
@@ -196,7 +219,7 @@ export function generateMonthlyMenu(
   const { template, warnings } = preflight(config, byCategory);
 
   const dayCount = daysInMonth(year, month);
-  const decisions = buildDecisions(dayCount, template);
+  const decisions = buildDecisions(year, month, dayCount, template, config);
   const offset = config.previousDays.length;
 
   let deepest: { index: number; diagnostics: FailureDiagnostics } | undefined;
@@ -214,9 +237,33 @@ export function generateMonthlyMenu(
     const solve = (i: number): boolean => {
       if (i === decisions.length) return true;
 
-      const { dayOffset, slot, category } = decisions[i];
+      const d = decisions[i];
+      const { dayOffset, slot, category } = d;
       const dayIndex = offset + dayOffset;
       const ctx: RuleContext = { config, timeline, dayIndex, slot, category };
+      const day = timeline[dayIndex];
+
+      // Hafta sonu senkronu: aday yok, öğledeki yemek kopyalanır ve yine kurallara sokulur.
+      if (d.syncFromLunch) {
+        const forced = day.meals.ogle[category];
+        if (!forced) return solve(i + 1);
+        const violated = findViolation(forced, ctx);
+        if (violated) {
+          if (!deepest || i > deepest.index) {
+            deepest = {
+              index: i,
+              diagnostics: { date: day.date, slot, category, rejectedBy: { [violated.id]: 1 } },
+            };
+          }
+          return false;
+        }
+        day.meals[slot][category] = forced;
+        usage.set(forced.id, (usage.get(forced.id) ?? 0) + 1);
+        if (solve(i + 1)) return true;
+        delete day.meals[slot][category];
+        usage.set(forced.id, (usage.get(forced.id) ?? 1) - 1);
+        return false;
+      }
 
       const { allowed, rejectedBy } = filterCandidates(byCategory[category], ctx);
       if (allowed.length === 0) {

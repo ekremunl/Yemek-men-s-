@@ -11,6 +11,10 @@ export interface FoodItem {
   name: string;
   category: CategoryKey;
   tags?: string[];
+  /** Aynı öğünde bu etiketleri taşıyan yemeklerle birlikte seçilmez (otomatik menü motoru). */
+  incompatibleWithTags?: string[];
+  /** Baskın bileşenler (ör. ['mercimek']). Aynı öğünde çakışan bileşen engellenir. */
+  mainIngredients?: string[];
 }
 
 export interface FourCourseMeal {

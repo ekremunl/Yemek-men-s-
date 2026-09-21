@@ -30,6 +30,7 @@ export type RuleId =
   | 'INTRA_INCOMPATIBLE_TAGS'
   | 'INTRA_CARB_MAIN_WITH_RICE_PASTA'
   | 'INTRA_DOMINANT_INGREDIENT'
+  | 'DAY_DUPLICATE_ITEM'
   | 'DAY_PROTEIN_REPEAT'
   | 'DAY_LEGUME_THEN_LIGHT'
   | 'WEEKEND_LUNCH_PRACTICAL'
@@ -121,10 +122,24 @@ export const RULES: readonly Rule[] = [
 
   // 2) AYNI GÜN İÇİ ----------------------------------------------------------
   {
+    id: 'DAY_DUPLICATE_ITEM',
+    description: 'Aynı yemek aynı günün iki öğününde birden yer alamaz (hafta sonu senkron kategorileri hariç).',
+    allows(dish, ctx) {
+      const synced =
+        isWeekend(currentDay(ctx)) && ctx.config.weekendSyncCategories.includes(dish.category);
+      if (synced) return true;
+      return !otherMealDishes(ctx).some((d) => d.id === dish.id);
+    },
+  },
+  {
     id: 'DAY_PROTEIN_REPEAT',
     description: 'Aynı günün öbür öğününde kullanılan protein grubu (tavuk/kırmızı et/...) tekrar edemez.',
     allows(dish, ctx) {
-      const used = proteinsOf(otherMealDishes(ctx), ctx.config);
+      // Aynı yemeğin kendisi (hafta sonu senkronu) kendi proteinini "tekrar etmiş" sayılmaz.
+      const used = proteinsOf(
+        otherMealDishes(ctx).filter((d) => d.id !== dish.id),
+        ctx.config,
+      );
       return !dish.tags.some((t) => ctx.config.proteinTags.includes(t) && used.has(t));
     },
   },

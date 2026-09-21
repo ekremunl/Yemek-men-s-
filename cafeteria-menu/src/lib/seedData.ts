@@ -80,6 +80,14 @@ export const SEED_DATA: FoodItem[] = [
   { id: 'm18', name: 'Sogan Kebabı', category: 'mainCourses', tags: ['beef'] },
   { id: 'm19', name: 'Yeşil Mercimek Yemeği', category: 'mainCourses', tags: ['legume', 'vegetarian'] },
   { id: 'm20', name: 'Barbunya Yemeği', category: 'mainCourses', tags: ['legume', 'vegetarian', 'traditional'] },
+  // Pratik yemekler (hafta sonu öğle öğünü için)
+  { id: 'm21', name: 'Mantı', category: 'mainCourses', tags: ['dough', 'carb_heavy', 'practical'] },
+  { id: 'm22', name: 'Su Böreği', category: 'mainCourses', tags: ['dough', 'carb_heavy', 'practical'] },
+  { id: 'm23', name: 'Kıymalı Pide', category: 'mainCourses', tags: ['dough', 'carb_heavy', 'beef', 'practical'] },
+  { id: 'm24', name: 'Peynirli Pide', category: 'mainCourses', tags: ['dough', 'carb_heavy', 'practical'] },
+  { id: 'm25', name: 'Tavuk Dürüm', category: 'mainCourses', tags: ['poultry', 'practical'] },
+  { id: 'm26', name: 'Hamburger', category: 'mainCourses', tags: ['beef', 'practical'] },
+  { id: 'm27', name: 'Lahmacun', category: 'mainCourses', tags: ['dough', 'carb_heavy', 'beef', 'practical'] },
 
   // Side Dishes
   { id: 'd1', name: 'Pirinç Pilavı', category: 'sideDishes', tags: ['rice'] },
@@ -92,6 +100,11 @@ export const SEED_DATA: FoodItem[] = [
   { id: 'd8', name: 'Domatesli Bulgur', category: 'sideDishes', tags: ['bulgur'] },
   { id: 'd9', name: 'Sade Makarna', category: 'sideDishes', tags: ['pasta'] },
   { id: 'd10', name: 'Spagetti', category: 'sideDishes', tags: ['pasta'] },
+  // Pilav/makarna içermeyen yan yemekler (hamur işi ana yemeklere eşlik edebilsin diye)
+  { id: 'd11', name: 'Çoban Salata', category: 'sideDishes', tags: ['salad', 'vegetable'] },
+  { id: 'd12', name: 'Mevsim Salata', category: 'sideDishes', tags: ['salad', 'vegetable'] },
+  { id: 'd13', name: 'Havuç Tarator', category: 'sideDishes', tags: ['vegetable', 'dairy'] },
+  { id: 'd14', name: 'Patates Kızartması', category: 'sideDishes', tags: ['fried'] },
 
   // Complements
   { id: 'c1', name: 'Ayran', category: 'complements', tags: ['dairy', 'drink'] },

@@ -19,6 +19,12 @@ export interface ScoringWeights {
   randomness: number;
 }
 
+export interface SoftPairing {
+  a: Tag[];
+  b: Tag[];
+  weight: number;
+}
+
 export interface GeneratorConfig {
   /** Hangi öğünde hangi kategoriler bulunsun. */
   mealTemplate: Record<MealSlot, DishCategory[]>;
@@ -45,6 +51,18 @@ export interface GeneratorConfig {
   maxConsecutiveProteinDays: number;
   /** Sert olmayan (skorlama) bekleme pencereleri. */
   softCooldownDays: Partial<Record<DishCategory, number>>;
+
+  // --- Hafta sonu senkronu ---
+  /**
+   * Cumartesi/Pazar günlerinde AKŞAM öğününde, öğle öğünüyle AYNI olacak kategoriler.
+   * (Ör. ['çorba','yan_urun','tatli_meyve']). Boş bırakılırsa senkron yoktur.
+   * Senkron yemekler, aynı-gün tekrar ve protein-tekrar kurallarından muaftır.
+   */
+  weekendSyncCategories: DishCategory[];
+
+  // --- Yumuşak eşleşme cezaları (skorlama; kural çiğnetmez) ---
+  /** Aynı öğünde bir yemekte `a`, diğerinde `b` etiketlerinden biri varsa `weight` kadar ceza. */
+  softPairings: SoftPairing[];
 
   weights: ScoringWeights;
 
@@ -79,6 +97,8 @@ export const DEFAULT_CONFIG: Omit<GeneratorConfig, 'seed'> = {
   mainCooldownDays: 5,
   maxConsecutiveProteinDays: 2,
   softCooldownDays: { ana_yemek: 10, çorba: 3, yan_urun: 2, tatli_meyve: 2 },
+  weekendSyncCategories: [],
+  softPairings: [],
   weights: {
     usage: 1,
     softRecency: 1.5,

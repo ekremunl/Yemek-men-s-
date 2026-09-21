@@ -65,7 +65,16 @@ export function scoreCandidate(
   const dup = dish.tags.filter((t) => mealProteins.has(t)).length;
   score -= w.sameMealProteinDup * dup;
 
-  // 6) Tercih puanı + çeşitlilik için gürültü.
+  // 6) Yumuşak eşleşme cezaları (ör. pilav + ekmek, balık + turşu).
+  const meal = mealDishes(currentMeal(ctx));
+  for (const { a, b, weight } of cfg.softPairings) {
+    const hits = (tags: readonly string[], x: Dish) => x.tags.some((t) => tags.includes(t));
+    if (meal.some((other) => (hits(a, dish) && hits(b, other)) || (hits(b, dish) && hits(a, other)))) {
+      score -= weight;
+    }
+  }
+
+  // 7) Tercih puanı + çeşitlilik için gürültü.
   score += w.popularity * (dish.popularity ?? 0);
   score += rng() * w.randomness;
 

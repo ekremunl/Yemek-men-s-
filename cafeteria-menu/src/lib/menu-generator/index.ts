@@ -4,7 +4,7 @@ export type { FailureDiagnostics, RuleViolation } from './generator';
 export { RULES, findViolation } from './rules';
 export type { Rule, RuleId, RuleContext } from './rules';
 export { DEFAULT_CONFIG } from './config';
-export type { GeneratorConfig, GeneratorOptions, ScoringWeights } from './config';
+export type { GeneratorConfig, GeneratorOptions, ScoringWeights, SoftPairing } from './config';
 export type {
   Dish,
   DishCategory,

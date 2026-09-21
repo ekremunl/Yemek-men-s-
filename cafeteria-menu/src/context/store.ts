@@ -4,8 +4,17 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { FoodItem, DailyMenu, CategoryKey, ConflictWarning, PlannerMealKey, MealCourseField, FourCourseMeal, MainMealKey } from '@/types';
 import { SEED_DATA } from '@/lib/seedData';
-import { generateId, getMonthDayEntries, isSameWeek, MONTH_NAMES_TR, parseDate } from '@/lib/utils';
-import { COURSE_TO_CATEGORY_KEY, createEmptyDailyMenu, createEmptyFourCourseMeal, getAllMenuItemIds, MAIN_MEAL_KEYS, MEAL_COURSE_FIELDS } from '@/lib/menu';
+import { generateId, isSameWeek, MONTH_NAMES_TR, parseDate } from '@/lib/utils';
+import {
+  createEmptyDailyMenu,
+  createEmptyFourCourseMeal,
+  formatMenuGenerationError,
+  generateAutoMonthMenus,
+  getAllMenuItemIds,
+  MAIN_MEAL_KEYS,
+  MEAL_COURSE_FIELDS,
+  type GeneratedMonth,
+} from '@/lib/menu';
 
 interface Toast {
   id: string;
@@ -129,12 +138,23 @@ function normalizeMenu(menu: DailyMenu | LegacyDailyMenu): DailyMenu {
   };
 }
 
+/**
+ * Sonradan varsayılan havuza eklenen yemekler. Kayıtlı (localStorage) havuzu eski olan
+ * kullanıcılara da eklenir: pratik ana yemekler (hafta sonu öğle kuralı) ve
+ * hamur işlerine eşlik edebilen pilav/makarna dışı yan yemekler.
+ */
+const REQUIRED_DEFAULT_SEED_IDS = new Set([
+  'm19', 'm20',
+  'm21', 'm22', 'm23', 'm24', 'm25', 'm26', 'm27',
+  'd11', 'd12', 'd13', 'd14',
+]);
+
 function normalizeFoodItems(foodItems: FoodItem[] | undefined): FoodItem[] {
   const existing = foodItems ?? [];
   if (existing.length === 0) return SEED_DATA;
 
   const requiredDefaultSeedItems = SEED_DATA.filter(
-    (item) => item.category === 'snacks' || item.id === 'm19' || item.id === 'm20'
+    (item) => item.category === 'snacks' || REQUIRED_DEFAULT_SEED_IDS.has(item.id)
   );
   const missingDefaultItems = requiredDefaultSeedItems.filter(
     (seedItem) =>
@@ -152,26 +172,6 @@ const CATEGORY_KEYS: CategoryKey[] = ['soups', 'mainCourses', 'sideDishes', 'com
 
 type CategoryPools = Record<CategoryKey, FoodItem[]>;
 
-interface GenerationStats {
-  itemUsage: Record<string, number>;
-  itemLastUsedDay: Record<string, number>;
-  categoryTagUsage: Record<CategoryKey, Record<string, number>>;
-  recentByCategory: Record<CategoryKey, string[]>;
-  weeklyMainUsage: Record<string, Set<string>>;
-  weeklyMealSignatures: Record<string, Set<string>>;
-  monthlyMealSignatures: Record<MainMealKey, Set<string>>;
-  selectionSequence: string[];
-}
-
-interface CandidateOptions {
-  date: string;
-  dayIndex: number;
-  slotKey: string;
-  excludeIds?: Set<string>;
-  distinctFromId?: string | null;
-  preferredDifferentTags?: string[];
-}
-
 function createCategoryPools(foodItems: FoodItem[]): CategoryPools {
   return {
     soups: foodItems.filter((item) => item.category === 'soups'),
@@ -180,481 +180,6 @@ function createCategoryPools(foodItems: FoodItem[]): CategoryPools {
     complements: foodItems.filter((item) => item.category === 'complements'),
     snacks: foodItems.filter((item) => item.category === 'snacks'),
   };
-}
-
-function createGenerationStats(): GenerationStats {
-  return {
-    itemUsage: {},
-    itemLastUsedDay: {},
-    categoryTagUsage: {
-      soups: {},
-      mainCourses: {},
-      sideDishes: {},
-      complements: {},
-      snacks: {},
-    },
-    recentByCategory: {
-      soups: [],
-      mainCourses: [],
-      sideDishes: [],
-      complements: [],
-      snacks: [],
-    },
-    weeklyMainUsage: {},
-    weeklyMealSignatures: {},
-    monthlyMealSignatures: {
-      lunch: new Set<string>(),
-      dinner: new Set<string>(),
-    },
-    selectionSequence: [],
-  };
-}
-
-function getStringHash(value: string): number {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash);
-}
-
-function getWeekKey(dateStr: string): string {
-  const date = parseDate(dateStr);
-  const startOfWeek = new Date(date);
-  const day = startOfWeek.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  startOfWeek.setDate(startOfWeek.getDate() + diff);
-
-  const year = startOfWeek.getFullYear();
-  const month = String(startOfWeek.getMonth() + 1).padStart(2, '0');
-  const dayOfMonth = String(startOfWeek.getDate()).padStart(2, '0');
-  return `${year}-${month}-${dayOfMonth}`;
-}
-
-function getMainCourseSideRule(mainItem: FoodItem | undefined): 'rice' | 'pasta' | null {
-  if (!mainItem) return null;
-
-  const normalizedName = mainItem.name.toLocaleLowerCase('tr-TR');
-  if (normalizedName.includes('kuru fasulye') || normalizedName.includes('nohut')) {
-    return 'rice';
-  }
-
-  if (normalizedName.includes('yeşil mercimek') || normalizedName.includes('barbunya')) {
-    return 'pasta';
-  }
-
-  return null;
-}
-
-function getCompatibleSidePool(mainItem: FoodItem | undefined, sidePool: FoodItem[]): FoodItem[] {
-  const rule = getMainCourseSideRule(mainItem);
-  if (rule === 'rice') {
-    return sidePool.filter((item) => item.name === 'Pirinç Pilavı');
-  }
-
-  if (rule === 'pasta') {
-    return sidePool.filter((item) => item.tags?.includes('pasta'));
-  }
-
-  return sidePool;
-}
-
-function hasProtectedTagOverlap(
-  firstTags: string[] | undefined,
-  secondTags: string[] | undefined,
-  protectedTags: string[]
-): boolean {
-  if (!firstTags?.length || !secondTags?.length) return false;
-  const protectedTagSet = new Set(protectedTags);
-  const first = new Set(firstTags.filter((tag) => protectedTagSet.has(tag)));
-  return secondTags.some((tag) => first.has(tag));
-}
-
-function getMealSignature(meal: FourCourseMeal): string {
-  return [
-    meal.soup ?? '-',
-    meal.mainCourse ?? '-',
-    meal.sideDish ?? '-',
-    meal.complement ?? '-',
-  ].join('|');
-}
-
-function hasMealSignatureConflict(
-  stats: GenerationStats,
-  mealKey: MainMealKey,
-  weekKey: string,
-  signature: string
-): boolean {
-  const weeklyKey = `${mealKey}:${weekKey}`;
-  return (
-    Boolean(stats.weeklyMealSignatures[weeklyKey]?.has(signature)) ||
-    stats.monthlyMealSignatures[mealKey].has(signature)
-  );
-}
-
-function registerMealSignature(
-  stats: GenerationStats,
-  mealKey: MainMealKey,
-  weekKey: string,
-  signature: string
-) {
-  const weeklyKey = `${mealKey}:${weekKey}`;
-  if (!stats.weeklyMealSignatures[weeklyKey]) {
-    stats.weeklyMealSignatures[weeklyKey] = new Set<string>();
-  }
-
-  stats.weeklyMealSignatures[weeklyKey].add(signature);
-  stats.monthlyMealSignatures[mealKey].add(signature);
-}
-
-function countTagOverlap(tagsA: string[] | undefined, tagsB: string[] | undefined): number {
-  if (!tagsA?.length || !tagsB?.length) return 0;
-  const tagSet = new Set(tagsB);
-  return tagsA.filter((tag) => tagSet.has(tag)).length;
-}
-
-function getRecentLimit(category: CategoryKey): number {
-  if (category === 'mainCourses') return 5;
-  if (category === 'snacks') return 3;
-  return 4;
-}
-
-function registerItemSelection(
-  stats: GenerationStats,
-  category: CategoryKey,
-  itemId: string | null,
-  dayIndex: number,
-  itemMap: Record<string, FoodItem>,
-  weekKey?: string
-) {
-  if (!itemId) return;
-
-  stats.selectionSequence.push(itemId);
-  stats.itemUsage[itemId] = (stats.itemUsage[itemId] ?? 0) + 1;
-  stats.itemLastUsedDay[itemId] = dayIndex;
-
-  for (const tag of itemMap[itemId]?.tags ?? []) {
-    stats.categoryTagUsage[category][tag] = (stats.categoryTagUsage[category][tag] ?? 0) + 1;
-  }
-
-  stats.recentByCategory[category] = [...stats.recentByCategory[category], itemId].slice(
-    -getRecentLimit(category)
-  );
-
-  if (category === 'mainCourses' && weekKey) {
-    if (!stats.weeklyMainUsage[weekKey]) {
-      stats.weeklyMainUsage[weekKey] = new Set<string>();
-    }
-    stats.weeklyMainUsage[weekKey].add(itemId);
-  }
-}
-
-function scoreCandidate(
-  item: FoodItem,
-  category: CategoryKey,
-  stats: GenerationStats,
-  options: CandidateOptions
-): number {
-  const usageCount = stats.itemUsage[item.id] ?? 0;
-  const lastUsedDay = stats.itemLastUsedDay[item.id];
-  const dayGap = lastUsedDay === undefined ? options.dayIndex + 3 : options.dayIndex - lastUsedDay;
-  const recentIndex = stats.recentByCategory[category].lastIndexOf(item.id);
-  const recentPenalty =
-    recentIndex === -1 ? 0 : (stats.recentByCategory[category].length - recentIndex) * 26;
-  const tagPenalty = (item.tags ?? []).reduce(
-    (sum, tag) => sum + (stats.categoryTagUsage[category][tag] ?? 0),
-    0
-  );
-  const overlapPenalty = countTagOverlap(item.tags, options.preferredDifferentTags) * 18;
-  const unusedBonus = usageCount === 0 ? 48 : 0;
-  const gapBonus = Math.min(dayGap, 10) * (category === 'mainCourses' ? 12 : 8);
-  const usagePenaltyWeight =
-    category === 'mainCourses' ? 42 : category === 'snacks' ? 26 : 20;
-  const tagPenaltyWeight = category === 'mainCourses' ? 10 : 4;
-  const tieBreaker = getStringHash(`${options.date}-${options.slotKey}-${item.id}`) % 11;
-
-  return (
-    unusedBonus +
-    gapBonus -
-    usageCount * usagePenaltyWeight -
-    recentPenalty -
-    tagPenalty * tagPenaltyWeight -
-    overlapPenalty +
-    tieBreaker
-  );
-}
-
-function rankCandidates(
-  pool: FoodItem[],
-  category: CategoryKey,
-  stats: GenerationStats,
-  options: CandidateOptions
-): FoodItem[] {
-  if (pool.length === 0) return [];
-
-  let candidates = [...pool];
-  const applyFilterIfPossible = (predicate: (item: FoodItem) => boolean) => {
-    const filtered = candidates.filter(predicate);
-    if (filtered.length > 0) {
-      candidates = filtered;
-    }
-  };
-
-  if (options.excludeIds?.size) {
-    applyFilterIfPossible((item) => !options.excludeIds?.has(item.id));
-  }
-
-  if (options.distinctFromId) {
-    applyFilterIfPossible((item) => item.id !== options.distinctFromId);
-  }
-
-  const recentIds = new Set(
-    stats.recentByCategory[category].slice(-getRecentLimit(category))
-  );
-  if (recentIds.size > 0) {
-    applyFilterIfPossible((item) => !recentIds.has(item.id));
-  }
-
-  return [...candidates].sort(
-    (left, right) =>
-      scoreCandidate(right, category, stats, options) -
-        scoreCandidate(left, category, stats, options) ||
-      left.name.localeCompare(right.name, 'tr')
-  );
-}
-
-function getMealCompatibilityPenalty(
-  meal: FourCourseMeal,
-  itemMap: Record<string, FoodItem>
-): number {
-  const soup = meal.soup ? itemMap[meal.soup] : undefined;
-  const main = meal.mainCourse ? itemMap[meal.mainCourse] : undefined;
-  const side = meal.sideDish ? itemMap[meal.sideDish] : undefined;
-  const complement = meal.complement ? itemMap[meal.complement] : undefined;
-
-  let penalty = 0;
-
-  if (!soup || !main || !side || !complement) {
-    return 900;
-  }
-
-  if (getMainCourseSideRule(main) === 'rice' && side.name !== 'Pirinç Pilavı') {
-    return 1000;
-  }
-
-  if (getMainCourseSideRule(main) === 'pasta' && !side.tags?.includes('pasta')) {
-    return 1000;
-  }
-
-  if (hasProtectedTagOverlap(soup.tags, main.tags, ['legume', 'beef', 'poultry', 'fish'])) {
-    penalty += 220;
-  }
-
-  if (hasProtectedTagOverlap(main.tags, side.tags, ['legume'])) {
-    penalty += 260;
-  }
-
-  if (hasProtectedTagOverlap(soup.tags, side.tags, ['noodle', 'pasta'])) {
-    penalty += 80;
-  }
-
-  if ((side.tags?.includes('rice') || side.tags?.includes('pasta') || side.tags?.includes('bulgur')) && complement.tags?.includes('bread')) {
-    penalty += 140;
-  }
-
-  if (main.tags?.includes('fish') && complement.tags?.includes('pickled')) {
-    penalty += 80;
-  }
-
-  if (complement.tags?.includes('dessert') && soup.tags?.includes('dairy')) {
-    penalty += 60;
-  }
-
-  return penalty;
-}
-
-function pickBalancedItem(
-  pool: FoodItem[],
-  category: CategoryKey,
-  stats: GenerationStats,
-  options: CandidateOptions
-): string | null {
-  return rankCandidates(pool, category, stats, options)[0]?.id ?? null;
-}
-
-function registerGeneratedMeal(
-  stats: GenerationStats,
-  mealKey: MainMealKey,
-  weekKey: string,
-  meal: FourCourseMeal,
-  dayIndex: number,
-  itemMap: Record<string, FoodItem>
-) {
-  registerItemSelection(stats, 'soups', meal.soup, dayIndex, itemMap);
-  registerItemSelection(stats, 'mainCourses', meal.mainCourse, dayIndex, itemMap, weekKey);
-  registerItemSelection(stats, 'sideDishes', meal.sideDish, dayIndex, itemMap);
-  registerItemSelection(stats, 'complements', meal.complement, dayIndex, itemMap);
-  registerMealSignature(stats, mealKey, weekKey, getMealSignature(meal));
-}
-
-function buildGeneratedMeal(
-  mealKey: MainMealKey,
-  dateStr: string,
-  dayIndex: number,
-  weekKey: string,
-  pools: CategoryPools,
-  stats: GenerationStats,
-  itemMap: Record<string, FoodItem>,
-  options?: {
-    distinctFromMeal?: FourCourseMeal;
-    lockedFields?: Partial<FourCourseMeal>;
-  }
-): FourCourseMeal {
-  const lockedFields = options?.lockedFields ?? {};
-  const distinctFromMeal = options?.distinctFromMeal;
-
-  const mainCandidates = rankCandidates(
-    pools.mainCourses,
-    'mainCourses',
-    stats,
-    {
-      date: dateStr,
-      dayIndex,
-      slotKey: `${mealKey}-main`,
-      excludeIds: stats.weeklyMainUsage[weekKey],
-      distinctFromId: distinctFromMeal?.mainCourse,
-      preferredDifferentTags: distinctFromMeal?.mainCourse
-        ? itemMap[distinctFromMeal.mainCourse]?.tags
-        : undefined,
-    }
-  ).slice(0, 12);
-
-  const findBestMeal = (allowRepeatedSignature: boolean): FourCourseMeal | null => {
-    let bestMeal: FourCourseMeal | null = null;
-    let bestScore = Number.NEGATIVE_INFINITY;
-
-    for (const mainItem of mainCandidates) {
-      const sidePool = lockedFields.sideDish
-        ? getCompatibleSidePool(mainItem, pools.sideDishes).filter(
-            (item) => item.id === lockedFields.sideDish
-          )
-        : getCompatibleSidePool(mainItem, pools.sideDishes);
-
-      if (sidePool.length === 0) continue;
-
-      const sideCandidates = (lockedFields.sideDish
-        ? sidePool
-        : rankCandidates(sidePool, 'sideDishes', stats, {
-            date: dateStr,
-            dayIndex,
-            slotKey: `${mealKey}-side`,
-            distinctFromId: distinctFromMeal?.sideDish,
-            preferredDifferentTags: mainItem.tags,
-          }).slice(0, 6));
-
-      const soupCandidates = (lockedFields.soup
-        ? pools.soups.filter((item) => item.id === lockedFields.soup)
-        : rankCandidates(pools.soups, 'soups', stats, {
-            date: dateStr,
-            dayIndex,
-            slotKey: `${mealKey}-soup`,
-            distinctFromId: distinctFromMeal?.soup,
-            preferredDifferentTags: mainItem.tags,
-          }).slice(0, 6));
-
-      const complementCandidates = (lockedFields.complement
-        ? pools.complements.filter((item) => item.id === lockedFields.complement)
-        : rankCandidates(pools.complements, 'complements', stats, {
-            date: dateStr,
-            dayIndex,
-            slotKey: `${mealKey}-complement`,
-            distinctFromId: distinctFromMeal?.complement,
-            preferredDifferentTags: mainItem.tags,
-          }).slice(0, 6));
-
-      const mainScore = scoreCandidate(mainItem, 'mainCourses', stats, {
-        date: dateStr,
-        dayIndex,
-        slotKey: `${mealKey}-main`,
-        excludeIds: stats.weeklyMainUsage[weekKey],
-        distinctFromId: distinctFromMeal?.mainCourse,
-        preferredDifferentTags: distinctFromMeal?.mainCourse
-          ? itemMap[distinctFromMeal.mainCourse]?.tags
-          : undefined,
-      });
-
-      for (const sideItem of sideCandidates) {
-        const sideScore = scoreCandidate(sideItem, 'sideDishes', stats, {
-          date: dateStr,
-          dayIndex,
-          slotKey: `${mealKey}-side`,
-          distinctFromId: distinctFromMeal?.sideDish,
-          preferredDifferentTags: mainItem.tags,
-        });
-
-        for (const soupItem of soupCandidates) {
-          const soupScore = scoreCandidate(soupItem, 'soups', stats, {
-            date: dateStr,
-            dayIndex,
-            slotKey: `${mealKey}-soup`,
-            distinctFromId: distinctFromMeal?.soup,
-            preferredDifferentTags: mainItem.tags,
-          });
-
-          for (const complementItem of complementCandidates) {
-            const complementScore = scoreCandidate(complementItem, 'complements', stats, {
-              date: dateStr,
-              dayIndex,
-              slotKey: `${mealKey}-complement`,
-              distinctFromId: distinctFromMeal?.complement,
-              preferredDifferentTags: mainItem.tags,
-            });
-
-            const meal: FourCourseMeal = {
-              soup: soupItem.id,
-              mainCourse: mainItem.id,
-              sideDish: sideItem.id,
-              complement: complementItem.id,
-            };
-
-            const signature = getMealSignature(meal);
-            if (!allowRepeatedSignature && hasMealSignatureConflict(stats, mealKey, weekKey, signature)) {
-              continue;
-            }
-
-            const compatibilityPenalty = getMealCompatibilityPenalty(meal, itemMap);
-            if (compatibilityPenalty >= 1000) continue;
-
-            const totalScore =
-              mainScore + sideScore + soupScore + complementScore - compatibilityPenalty;
-
-            if (totalScore > bestScore) {
-              bestScore = totalScore;
-              bestMeal = meal;
-            }
-          }
-        }
-      }
-    }
-
-    return bestMeal;
-  };
-
-  return (
-    findBestMeal(false) ??
-    findBestMeal(true) ?? {
-      soup: lockedFields.soup ?? pools.soups[0]?.id ?? null,
-      mainCourse: mainCandidates[0]?.id ?? null,
-      sideDish:
-        lockedFields.sideDish ??
-        getCompatibleSidePool(
-          mainCandidates[0],
-          pools.sideDishes
-        )[0]?.id ??
-        null,
-      complement: lockedFields.complement ?? pools.complements[0]?.id ?? null,
-    }
-  );
 }
 
 function moveItemToCategoryEnd(foodItems: FoodItem[], itemId: string): FoodItem[] {
@@ -854,63 +379,27 @@ export const useAppStore = create<AppState>()(
           return;
         }
 
-        const itemMap = Object.fromEntries(foodItems.map((item) => [item.id, item])) as Record<
-          string,
-          FoodItem
-        >;
-        const stats = createGenerationStats();
-        const monthEntries = getMonthDayEntries(year, month);
-
-        const generatedMenus = monthEntries.map(({ dateStr }, dayIndex) => {
-          const weekKey = getWeekKey(dateStr);
-          const weekend = isWeekendDate(dateStr);
-          const menu = createEmptyDailyMenu(dateStr);
-
-          menu.lunch = buildGeneratedMeal(
-            'lunch',
-            dateStr,
-            dayIndex,
-            weekKey,
-            pools,
-            stats,
-            itemMap
+        let generated: GeneratedMonth;
+        try {
+          generated = generateAutoMonthMenus(
+            foodItems,
+            year,
+            month,
+            menus.map((menu) => normalizeMenu(menu))
           );
-          registerGeneratedMeal(stats, 'lunch', weekKey, menu.lunch, dayIndex, itemMap);
-
-          menu.dinner = buildGeneratedMeal(
-            'dinner',
-            dateStr,
-            dayIndex,
-            weekKey,
-            pools,
-            stats,
-            itemMap,
-            weekend
-              ? {
-                  distinctFromMeal: menu.lunch,
-                  lockedFields: {
-                    soup: menu.lunch.soup,
-                    sideDish: menu.lunch.sideDish,
-                    complement: menu.lunch.complement,
-                  },
-                }
-              : { distinctFromMeal: menu.lunch }
-          );
-          registerGeneratedMeal(stats, 'dinner', weekKey, menu.dinner, dayIndex, itemMap);
-
-          menu.snack = pickBalancedItem(pools.snacks, 'snacks', stats, {
-            date: dateStr,
-            dayIndex,
-            slotKey: 'snack',
+        } catch (error) {
+          console.error('Otomatik menü oluşturulamadı:', error);
+          get().addToast({
+            type: 'error',
+            title: 'Menü Oluşturulamadı',
+            message: formatMenuGenerationError(error),
           });
-          registerItemSelection(stats, 'snacks', menu.snack, dayIndex, itemMap);
-
-          return menu;
-        });
+          return;
+        }
 
         const rotatedFoodItems = rotateFoodItemsBySelectionSequence(
           foodItems,
-          stats.selectionSequence
+          generated.selectionSequence
         );
         const preservedMenus = menus
           .map((menu) => normalizeMenu(menu))
@@ -921,7 +410,7 @@ export const useAppStore = create<AppState>()(
 
         set({
           foodItems: rotatedFoodItems,
-          menus: [...preservedMenus, ...generatedMenus].sort((left, right) =>
+          menus: [...preservedMenus, ...generated.menus].sort((left, right) =>
             left.date.localeCompare(right.date)
           ),
         });
@@ -931,6 +420,14 @@ export const useAppStore = create<AppState>()(
           title: 'Aylık Menü Oluşturuldu',
           message: `${MONTH_NAMES_TR[month]} ${year} için dengeli ve çeşitli aylık menü hazırlandı.`,
         });
+
+        if (generated.warnings.length > 0) {
+          get().addToast({
+            type: 'info',
+            title: 'Menü Hakkında Not',
+            message: generated.warnings.join(' '),
+          });
+        }
       },
 
       setCurrentMonth: (year, month) => set({ currentYear: year, currentMonth: month }),
@@ -1005,7 +502,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'cafeteria-menu-store',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => (typeof window !== 'undefined' ? localStorage : { getItem: () => null, setItem: () => {}, removeItem: () => {} })),
       migrate: (persistedState: unknown) => {
         if (!persistedState || typeof persistedState !== 'object') return persistedState;
