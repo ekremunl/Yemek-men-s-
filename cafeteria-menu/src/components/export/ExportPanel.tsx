@@ -18,6 +18,7 @@ import {
   MAIN_MEAL_KEYS,
   MEAL_LABELS_TR,
 } from '@/lib/menu';
+import BackupPanel from './BackupPanel';
 
 export default function ExportPanel() {
   const { currentYear, currentMonth, setCurrentMonth, menus, foodItems } = useAppStore((s) => ({
@@ -252,6 +253,9 @@ export default function ExportPanel() {
           Yazdır / PDF
         </button>
       </div>
+
+      {/* Yedekleme */}
+      <BackupPanel />
 
       {/* Preview table */}
       <div>
