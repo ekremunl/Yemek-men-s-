@@ -79,3 +79,15 @@ export function getTagLabel(key: string): string {
 export function isKnownTag(key: string): boolean {
   return TAG_LABELS.has(key);
 }
+
+/** Bir etiket verilen kategoriye atanabilir mi? (ör. "Pirinç pilavı" yalnızca yan yemeklere.) Özel etiketler her yerde geçerlidir. */
+export function isTagAllowedForCategory(key: string, category: string): boolean {
+  const group = TAG_GROUPS.find((g) => g.tags.some((tag) => tag.key === key));
+  if (!group || !group.onlyForCategories) return true;
+  return group.onlyForCategories.includes(category);
+}
+
+/** Özel etiket yazımını tutarlı hale getirir (küçük harf, tek boşluk, virgülsüz). */
+export function normalizeCustomTag(value: string): string {
+  return value.replace(/,/g, ' ').trim().replace(/\s+/g, ' ').toLocaleLowerCase('tr-TR');
+}

@@ -214,6 +214,9 @@ const INGREDIENT_KEYWORDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/ıspanak/, 'ıspanak'],
 ];
 
+/** Düzenleyicide öneri olarak sunulan bilinen baskın bileşenler. */
+export const INGREDIENT_SUGGESTIONS: string[] = INGREDIENT_KEYWORDS.map(([, ingredient]) => ingredient);
+
 function inferIngredients(item: FoodItem): string[] {
   const name = item.name.toLocaleLowerCase('tr-TR');
   return INGREDIENT_KEYWORDS.filter(([pattern]) => pattern.test(name)).map(([, ingredient]) => ingredient);
