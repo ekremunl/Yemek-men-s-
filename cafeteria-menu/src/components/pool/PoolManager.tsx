@@ -1,13 +1,17 @@
 // src/components/pool/PoolManager.tsx
 'use client';
-import { useState } from 'react';
-import { Plus, Trash2, Soup, UtensilsCrossed, Salad, Apple, Search, Cookie, Tag, RotateCcw } from 'lucide-react';
-import { useAppStore } from '@/context/store';
+import { useMemo, useState } from 'react';
+import {
+  Plus, Trash2, Soup, UtensilsCrossed, Salad, Apple, Search, Cookie, Tag, RotateCcw,
+  CheckSquare, Square, Sparkles, ChevronDown,
+} from 'lucide-react';
+import { useAppStore, FoodItemMetadataChanges } from '@/context/store';
 import { CategoryKey, FoodItem } from '@/types';
 import { CATEGORY_META, SEED_DATA } from '@/lib/seedData';
-import { getEffectiveTags } from '@/lib/menu';
+import { getEffectiveTags, inferTagsFromName, INGREDIENT_SUGGESTIONS } from '@/lib/menu';
 import { getTagLabel, isKnownTag, TAG_GROUPS } from '@/lib/tags';
 import { cn } from '@/lib/utils';
+import { IngredientInput, TagPicker } from './TagPicker';
 
 const CAT_ICONS: Record<CategoryKey, React.ReactNode> = {
   soups: <Soup className="w-4 h-4" />,
@@ -63,120 +67,89 @@ const COMPANION_CATEGORIES: { key: CategoryKey; title: string }[] = [
   { key: 'complements', title: 'Tamamlayıcı' },
 ];
 
-/** Bir yemeğin etiketlerini ve baskın bileşenlerini düzenleyen satır içi panel. */
-function TagEditor({
-  item,
-  colors,
-  onClose,
-}: {
-  item: FoodItem;
-  colors: CategoryColors;
-  onClose: () => void;
-}) {
+const uniq = (list: string[]) => Array.from(new Set(list));
+
+/** Etiket filtresi: null = hepsi, aksi halde etiket anahtarı veya özel filtre. */
+type TagFilter = string | null;
+const FILTER_NONE = '__none'; // etiketi (kayıtlı ya da tahmini) hiç olmayanlar
+const FILTER_GUESSED = '__guessed'; // yalnızca isminden tahmin edilen etiketi olanlar
+
+function matchesFilter(item: FoodItem, filter: TagFilter): boolean {
+  if (!filter) return true;
+  if (item.category === 'snacks') return false; // ara öğünler etiketlenmez
+  const effective = getEffectiveTags(item);
+  if (filter === FILTER_NONE) return effective.length === 0;
+  if (filter === FILTER_GUESSED) return !item.tags?.length && effective.length > 0;
+  return effective.includes(filter);
+}
+
+const BADGE_ADD = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+const BADGE_REMOVE = 'bg-red-500/20 text-red-300 border-red-500/30';
+const FILTER_ON = 'bg-indigo-500/25 text-indigo-200 border-indigo-400/40';
+const FILTER_OFF = 'border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80';
+
+/** Bir yemeğin etiketlerini ve baskın bileşenlerini düzenleyen satır içi panel. Değişiklikler anında kaydedilir. */
+function TagEditor({ item, colors, onClose }: { item: FoodItem; colors: CategoryColors; onClose: () => void }) {
   const updateFoodItem = useAppStore((s) => s.updateFoodItem);
   const foodItems = useAppStore((s) => s.foodItems);
   const isMain = item.category === 'mainCourses';
   const seedItem = SEED_DATA.find((seed) => seed.id === item.id);
   const hasStoredTags = Boolean(item.tags?.length);
 
-  // Kayıtlı etiket yoksa isimden tahmin edilenler seçili başlar; "Kaydet" ile kalıcı olur.
-  const [tags, setTags] = useState<string[]>(() => getEffectiveTags(item));
-  const [ingredients, setIngredients] = useState((item.mainIngredients ?? []).join(', '));
-  // Havuzdan silinmiş yemeklerin kimlikleri baştan ayıklanır.
-  const [companions, setCompanions] = useState<string[]>(() =>
-    (item.suggestedCompanions ?? []).filter((id) => foodItems.some((food) => food.id === id))
+  // Kayıtlı etiket yoksa isimden tahmin edilenler gösterilir; ilk dokunuşta hepsi kalıcı olur.
+  const tags = getEffectiveTags(item);
+  const ingredients = item.mainIngredients ?? [];
+  // Havuzdan silinmiş yemeklerin kimlikleri ayıklanır.
+  const companions = useMemo(
+    () => (item.suggestedCompanions ?? []).filter((id) => foodItems.some((food) => food.id === id)),
+    [item.suggestedCompanions, foodItems]
   );
   const [showCompanions, setShowCompanions] = useState(companions.length > 0);
 
-  const toggle = (key: string) =>
-    setTags((prev) => (prev.includes(key) ? prev.filter((tag) => tag !== key) : [...prev, key]));
-
-  const toggleCompanion = (id: string) =>
-    setCompanions((prev) => (prev.includes(id) ? prev.filter((companionId) => companionId !== id) : [...prev, id]));
-
-  const customTags = tags.filter((tag) => !isKnownTag(tag));
-  const groups = TAG_GROUPS.filter(
-    (group) => !group.onlyForCategories || group.onlyForCategories.includes(item.category)
+  const customSuggestions = useMemo(
+    () => uniq(foodItems.flatMap((f) => f.tags ?? []).filter((t) => !isKnownTag(t))).sort((a, b) => a.localeCompare(b, 'tr')),
+    [foodItems]
+  );
+  const ingredientSuggestions = useMemo(
+    () => uniq([...INGREDIENT_SUGGESTIONS, ...foodItems.flatMap((f) => f.mainIngredients ?? [])]).sort((a, b) => a.localeCompare(b, 'tr')),
+    [foodItems]
   );
 
-  const handleSave = () => {
-    updateFoodItem(item.id, {
-      tags,
-      mainIngredients: ingredients.split(','),
-      ...(isMain ? { suggestedCompanions: companions } : {}),
-    });
-    onClose();
-  };
+  const save = (changes: FoodItemMetadataChanges) => updateFoodItem(item.id, changes, { silent: true });
+
+  const toggleTag = (key: string) => save({ tags: tags.includes(key) ? tags.filter((t) => t !== key) : [...tags, key] });
+  const toggleCompanion = (id: string) =>
+    save({ suggestedCompanions: companions.includes(id) ? companions.filter((c) => c !== id) : [...companions, id] });
 
   const handleReset = () => {
     if (!seedItem) return;
-    setTags(seedItem.tags ?? []);
-    setIngredients((seedItem.mainIngredients ?? []).join(', '));
+    if (!window.confirm('Bu yemeğin etiketleri ve bileşenleri varsayılana döndürülsün mü?')) return;
+    save({ tags: seedItem.tags ?? [], mainIngredients: seedItem.mainIngredients ?? [] });
   };
 
   return (
     <div className="mx-2 mb-2 rounded-xl border border-white/10 bg-black/20 p-3 space-y-3">
       {!hasStoredTags && (
         <p className="text-[11px] text-white/40">
-          Bu yemeğin kayıtlı etiketi yok; seçili olanlar isminden tahmin edildi. Doğruysa kaydedin, değilse düzeltin.
+          Bu yemeğin kayıtlı etiketi yok; gösterilenler isminden tahmin edildi. Bir etikete dokunduğunuzda tahminler de kaydedilir.
         </p>
       )}
 
-      {groups.map((group) => (
-        <div key={group.id}>
-          <p className="text-[11px] font-medium text-white/40 mb-1.5">{group.title}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {group.tags.map((tag) => {
-              const active = tags.includes(tag.key);
-              return (
-                <button
-                  key={tag.key}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => toggle(tag.key)}
-                  className={cn(
-                    'text-xs px-2 py-1 rounded-full border transition-colors',
-                    active ? colors.badge : 'border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80'
-                  )}
-                >
-                  {tag.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-
-      {customTags.length > 0 && (
-        <div>
-          <p className="text-[11px] font-medium text-white/40 mb-1.5">Özel etiketler (korunur)</p>
-          <div className="flex flex-wrap gap-1.5">
-            {customTags.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => toggle(tag)}
-                className={cn('text-xs px-2 py-1 rounded-full border', colors.badge)}
-                title="Kaldırmak için tıklayın"
-              >
-                {getTagLabel(tag)} ×
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      <TagPicker
+        category={item.category}
+        selected={tags}
+        onToggle={toggleTag}
+        activeClass={colors.badge}
+        customSuggestions={customSuggestions}
+      />
 
       <div>
-        <label className="text-[11px] font-medium text-white/40 mb-1.5 block" htmlFor={`ing-${item.id}`}>
-          Baskın bileşenler (virgülle ayırın)
-        </label>
-        <input
-          id={`ing-${item.id}`}
-          type="text"
+        <p className="text-[11px] font-medium text-white/40 mb-1.5">Baskın bileşenler (Enter veya virgülle ekleyin)</p>
+        <IngredientInput
           value={ingredients}
-          onChange={(e) => setIngredients(e.target.value)}
-          placeholder="örn. mercimek, yoğurt"
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
+          onChange={(next) => save({ mainIngredients: next })}
+          suggestions={ingredientSuggestions}
+          activeClass={colors.badge}
         />
       </div>
 
@@ -219,9 +192,7 @@ function TagEditor({
                             onClick={() => toggleCompanion(option.id)}
                             className={cn(
                               'text-xs px-2 py-1 rounded-full border transition-colors',
-                              active
-                                ? colors.badge
-                                : 'border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80'
+                              active ? colors.badge : 'border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80'
                             )}
                           >
                             {option.name}
@@ -242,29 +213,24 @@ function TagEditor({
         <p>• Bakliyat öğlendeyse akşam hafif (sebze/balık) olur. Pratik yemekler hafta sonu öğlene konur.</p>
         <p>• Hamur işi / karbonhidrat ağırlıklı ana yemeğin yanına pilav-makarna gelmez.</p>
         <p>• Ortak baskın bileşenli yemekler aynı öğünde birlikte gelmez (mercimek çorbası + mercimek köftesi gibi).</p>
+        <p>• Tüm etiketleri kaldırırsanız yemek yine isminden tahmin edilen etiketlere döner.</p>
       </div>
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={handleSave}
-          className={cn('px-3 py-1.5 rounded-lg text-white text-xs font-medium transition-colors', colors.btn)}
-        >
-          Kaydet
-        </button>
+        <span className="text-[11px] text-emerald-400/70">✓ Değişiklikler otomatik kaydedilir</span>
         <button
           type="button"
           onClick={onClose}
-          className="px-3 py-1.5 rounded-lg text-xs text-white/60 hover:text-white hover:bg-white/5 transition-colors"
+          className={cn('ml-auto px-3 py-1.5 rounded-lg text-white text-xs font-medium transition-colors', colors.btn)}
         >
-          Vazgeç
+          Kapat
         </button>
         {seedItem && (
           <button
             type="button"
             onClick={handleReset}
-            className="ml-auto flex items-center gap-1 text-[11px] text-white/40 hover:text-white/80 transition-colors"
-            title="Varsayılan etiketleri geri yükle (Kaydet'e basana kadar uygulanmaz)"
+            className="flex items-center gap-1 text-[11px] text-white/40 hover:text-white/80 transition-colors"
+            title="Varsayılan etiketleri geri yükle"
           >
             <RotateCcw className="w-3 h-3" />
             Varsayılana dön
@@ -275,8 +241,19 @@ function TagEditor({
   );
 }
 
-function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
+interface CategoryPanelProps {
+  categoryKey: CategoryKey;
+  filter: TagFilter;
+  selectMode: boolean;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onSetMany: (ids: string[], on: boolean) => void;
+}
+
+function CategoryPanel({ categoryKey, filter, selectMode, selected, onToggleSelect, onSetMany }: CategoryPanelProps) {
   const [newName, setNewName] = useState('');
+  const [newTags, setNewTags] = useState<string[] | null>(null); // null = isimden tahmini izle
+  const [showNewTags, setShowNewTags] = useState(false);
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const { foodItems, addFoodItem, removeFoodItem } = useAppStore((s) => ({
@@ -287,31 +264,61 @@ function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
 
   const meta = CATEGORY_META.find((c) => c.key === categoryKey)!;
   const colors = CAT_COLORS[categoryKey];
+  const editable = categoryKey !== 'snacks'; // ara öğünler menü motorunda kullanılmaz
+  const query = search.toLocaleLowerCase('tr-TR');
+  const total = foodItems.filter((f) => f.category === categoryKey).length;
   const items = foodItems.filter(
-    (f) => f.category === categoryKey && f.name.toLowerCase().includes(search.toLowerCase())
+    (f) => f.category === categoryKey && f.name.toLocaleLowerCase('tr-TR').includes(query) && matchesFilter(f, filter)
+  );
+  const allVisibleSelected = items.length > 0 && items.every((i) => selected.has(i.id));
+
+  const customSuggestions = useMemo(
+    () => uniq(foodItems.flatMap((f) => f.tags ?? []).filter((t) => !isKnownTag(t))).sort((a, b) => a.localeCompare(b, 'tr')),
+    [foodItems]
   );
 
+  // Yeni yemek için isimden tahmin edilen etiketler; kullanıcı dokunana kadar bunlar izlenir.
+  const suggestedTags = useMemo(
+    () => (editable && newName.trim() ? inferTagsFromName({ id: 'new', name: newName, category: categoryKey }) : []),
+    [editable, newName, categoryKey]
+  );
+  const pickedTags = newTags ?? suggestedTags;
+
+  const toggleNewTag = (key: string) =>
+    setNewTags((prev) => {
+      const base = prev ?? suggestedTags;
+      return base.includes(key) ? base.filter((t) => t !== key) : [...base, key];
+    });
+
   const handleAdd = () => {
-    if (newName.trim()) {
-      addFoodItem(newName, categoryKey);
-      setNewName('');
-    }
+    if (!newName.trim()) return;
+    addFoodItem(newName, categoryKey, editable && pickedTags.length > 0 ? { tags: pickedTags } : undefined);
+    setNewName('');
+    setNewTags(null);
+    setShowNewTags(false);
   };
 
   return (
     <div className={cn('rounded-2xl border backdrop-blur-sm flex flex-col', colors.bg, colors.border)}>
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-4 border-b border-white/5">
-        <span className={cn('p-2 rounded-lg', colors.bg, colors.text)}>
-          {CAT_ICONS[categoryKey]}
-        </span>
+        <span className={cn('p-2 rounded-lg', colors.bg, colors.text)}>{CAT_ICONS[categoryKey]}</span>
         <div className="flex-1">
           <h3 className="font-semibold text-white text-sm">{meta.labelTR}</h3>
-          <p className="text-xs text-white/40">{items.length} / {foodItems.filter(f => f.category === categoryKey).length} ürün</p>
+          <p className="text-xs text-white/40">{items.length} / {total} ürün</p>
         </div>
-        <span className={cn('text-xs px-2 py-0.5 rounded-full border font-medium', colors.badge)}>
-          {foodItems.filter((f) => f.category === categoryKey).length}
-        </span>
+        {selectMode && editable && (
+          <button
+            type="button"
+            onClick={() => onSetMany(items.map((i) => i.id), !allVisibleSelected)}
+            disabled={items.length === 0}
+            className="flex items-center gap-1 text-[11px] text-white/60 hover:text-white disabled:opacity-30 transition-colors"
+          >
+            {allVisibleSelected ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+            Görünenleri seç
+          </button>
+        )}
+        <span className={cn('text-xs px-2 py-0.5 rounded-full border font-medium', colors.badge)}>{total}</span>
       </div>
 
       {/* Search */}
@@ -334,8 +341,8 @@ function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
           <p className="text-center text-white/30 text-xs py-4">Ürün bulunamadı</p>
         ) : (
           items.map((item) => {
-            const editable = categoryKey !== 'snacks'; // ara öğünler menü motorunda kullanılmaz
             const isEditing = editingId === item.id;
+            const isSelected = selected.has(item.id);
             const hasStoredTags = Boolean(item.tags?.length);
             const shownTags = editable ? getEffectiveTags(item) : [];
             const companionCount =
@@ -344,17 +351,30 @@ function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
                 : 0;
 
             return (
-              <div key={item.id} className="rounded-lg hover:bg-white/5 transition-colors">
+              <div key={item.id} className={cn('rounded-lg hover:bg-white/5 transition-colors', isSelected && 'bg-indigo-500/10')}>
                 <div className="flex items-center justify-between group px-3 py-2">
-                  <span className="text-sm text-white/80 truncate flex-1">{item.name}</span>
+                  {selectMode && editable && (
+                    <button
+                      type="button"
+                      onClick={() => onToggleSelect(item.id)}
+                      aria-pressed={isSelected}
+                      aria-label={`${item.name} seç`}
+                      className={cn('mr-2 shrink-0 transition-colors', isSelected ? 'text-indigo-300' : 'text-white/30 hover:text-white/70')}
+                    >
+                      {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  )}
+                  <span
+                    className={cn('text-sm text-white/80 truncate flex-1', selectMode && editable && 'cursor-pointer')}
+                    onClick={selectMode && editable ? () => onToggleSelect(item.id) : undefined}
+                  >
+                    {item.name}
+                  </span>
                   {editable && (
                     <button
                       type="button"
                       onClick={() => setEditingId(isEditing ? null : item.id)}
-                      className={cn(
-                        'ml-2 shrink-0 transition-colors',
-                        isEditing ? colors.text : 'text-white/30 hover:text-white/80'
-                      )}
+                      className={cn('ml-2 shrink-0 transition-colors', isEditing ? colors.text : 'text-white/30 hover:text-white/80')}
                       title="Etiketleri düzenle"
                       aria-label={`${item.name} etiketlerini düzenle`}
                       aria-expanded={isEditing}
@@ -385,14 +405,9 @@ function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
                         {getTagLabel(tag)}
                       </span>
                     ))}
-                    {shownTags.length > 4 && (
-                      <span className="text-[10px] text-white/30 px-1">+{shownTags.length - 4}</span>
-                    )}
+                    {shownTags.length > 4 && <span className="text-[10px] text-white/30 px-1">+{shownTags.length - 4}</span>}
                     {companionCount > 0 && (
-                      <span
-                        title="Önerilen eşlikçi sayısı"
-                        className="text-[10px] px-1.5 py-0.5 rounded-full border border-white/15 text-white/60"
-                      >
+                      <span title="Önerilen eşlikçi sayısı" className="text-[10px] px-1.5 py-0.5 rounded-full border border-white/15 text-white/60">
                         ★ {companionCount} eşlikçi
                       </span>
                     )}
@@ -417,7 +432,7 @@ function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
       </div>
 
       {/* Add */}
-      <div className="px-4 pb-4 pt-2 border-t border-white/5 mt-1">
+      <div className="px-4 pb-4 pt-2 border-t border-white/5 mt-1 space-y-2">
         <div className="flex gap-2">
           <input
             type="text"
@@ -427,34 +442,274 @@ function CategoryPanel({ categoryKey }: { categoryKey: CategoryKey }) {
             placeholder="Yeni ürün ekle..."
             className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
           />
-          <button
-            onClick={handleAdd}
-            className={cn('px-3 py-2 rounded-lg text-white text-sm font-medium transition-colors shrink-0', colors.btn)}
-          >
+          <button onClick={handleAdd} className={cn('px-3 py-2 rounded-lg text-white text-sm font-medium transition-colors shrink-0', colors.btn)}>
             <Plus className="w-4 h-4" />
           </button>
         </div>
+
+        {editable && newName.trim() && (
+          <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 space-y-2">
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="text-white/40 shrink-0">Etiketler:</span>
+              <span className="flex flex-wrap gap-1 flex-1">
+                {pickedTags.length === 0 ? (
+                  <span className="text-white/30">yok</span>
+                ) : (
+                  pickedTags.map((tag) => (
+                    <span key={tag} className={cn('px-1.5 py-0.5 rounded-full border', colors.badge)}>
+                      {getTagLabel(tag)}
+                    </span>
+                  ))
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowNewTags((open) => !open)}
+                aria-expanded={showNewTags}
+                className="flex items-center gap-0.5 text-white/50 hover:text-white transition-colors shrink-0"
+              >
+                {showNewTags ? 'Gizle' : 'Değiştir'}
+                <ChevronDown className={cn('w-3 h-3 transition-transform', showNewTags && 'rotate-180')} />
+              </button>
+            </div>
+            {!newTags && suggestedTags.length > 0 && (
+              <p className="text-[10px] text-white/30">İsminden tahmin edildi; eklemeden önce değiştirebilirsiniz.</p>
+            )}
+            {showNewTags && (
+              <TagPicker
+                category={categoryKey}
+                selected={pickedTags}
+                onToggle={toggleNewTag}
+                activeClass={colors.badge}
+                customSuggestions={customSuggestions}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Seçili yemeklere toplu etiket ekler / çıkarır. Ekranın altına yapışık çalışır. */
+function BulkBar({ ids, onClear }: { ids: string[]; onClear: () => void }) {
+  const bulkUpdateTags = useAppStore((s) => s.bulkUpdateTags);
+  const addToast = useAppStore((s) => s.addToast);
+  const foodItems = useAppStore((s) => s.foodItems);
+  const [mode, setMode] = useState<'add' | 'remove'>('add');
+  const [picked, setPicked] = useState<string[]>([]);
+  const [open, setOpen] = useState(true);
+
+  const customSuggestions = useMemo(
+    () => uniq(foodItems.flatMap((f) => f.tags ?? []).filter((t) => !isKnownTag(t))).sort((a, b) => a.localeCompare(b, 'tr')),
+    [foodItems]
+  );
+
+  const toggle = (tag: string) => setPicked((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+
+  const apply = () => {
+    if (picked.length === 0) return;
+    const changed = bulkUpdateTags(ids, mode === 'add' ? picked : [], mode === 'remove' ? picked : []);
+    addToast({
+      type: changed > 0 ? 'success' : 'error',
+      title: 'Toplu etiketleme',
+      message:
+        changed > 0
+          ? `${changed} yemek güncellendi.`
+          : 'Hiçbir yemek değişmedi (etiketler zaten öyleydi ya da kategoriye uygun değildi).',
+    });
+    setPicked([]);
+  };
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-slate-900/95 backdrop-blur">
+      <div className="max-w-3xl mx-auto p-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex items-center gap-1 text-sm font-semibold text-white">
+            {ids.length} yemek seçili
+            <ChevronDown className={cn('w-4 h-4 transition-transform', open && 'rotate-180')} />
+          </button>
+          <div className="flex rounded-lg border border-white/10 overflow-hidden text-xs">
+            <button type="button" onClick={() => setMode('add')} className={cn('px-3 py-1.5 transition-colors', mode === 'add' ? 'bg-emerald-500/30 text-emerald-200' : 'text-white/50 hover:bg-white/5')}>
+              Etiket ekle
+            </button>
+            <button type="button" onClick={() => setMode('remove')} className={cn('px-3 py-1.5 transition-colors', mode === 'remove' ? 'bg-red-500/30 text-red-200' : 'text-white/50 hover:bg-white/5')}>
+              Etiket çıkar
+            </button>
+          </div>
+          <button type="button" onClick={onClear} className="ml-auto text-xs text-white/50 hover:text-white transition-colors">
+            Seçimi temizle
+          </button>
+          <button
+            type="button"
+            onClick={apply}
+            disabled={picked.length === 0}
+            className={cn(
+              'px-4 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors disabled:opacity-30',
+              mode === 'add' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'
+            )}
+          >
+            Uygula{picked.length > 0 ? ` (${picked.length})` : ''}
+          </button>
+        </div>
+        {open && (
+          <div className="max-h-[38vh] overflow-y-auto pr-1">
+            <TagPicker selected={picked} onToggle={toggle} activeClass={mode === 'add' ? BADGE_ADD : BADGE_REMOVE} customSuggestions={customSuggestions} />
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 export default function PoolManager() {
+  const foodItems = useAppStore((s) => s.foodItems);
+  const confirmInferredTags = useAppStore((s) => s.confirmInferredTags);
+  const addToast = useAppStore((s) => s.addToast);
+  const [filter, setFilter] = useState<TagFilter>(null);
+  const [showTagFilters, setShowTagFilters] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const stats = useMemo(() => {
+    const counts = new Map<string, number>();
+    let none = 0;
+    let guessed = 0;
+    foodItems.forEach((item) => {
+      if (item.category === 'snacks') return;
+      const effective = getEffectiveTags(item);
+      if (effective.length === 0) none += 1;
+      else if (!item.tags?.length) guessed += 1;
+      effective.forEach((tag) => counts.set(tag, (counts.get(tag) ?? 0) + 1));
+    });
+    return { counts, none, guessed };
+  }, [foodItems]);
+
+  // Bilinen etiketler grup sırasıyla, ardından havuzda kullanılan özel etiketler.
+  const filterTags = useMemo(() => {
+    const known = TAG_GROUPS.flatMap((g) => g.tags.map((t) => t.key));
+    const custom = Array.from(stats.counts.keys()).filter((t) => !isKnownTag(t)).sort((a, b) => a.localeCompare(b, 'tr'));
+    return uniq([...known, ...custom]).filter((tag) => (stats.counts.get(tag) ?? 0) > 0 || tag === filter);
+  }, [stats, filter]);
+
+  const selectedIds = useMemo(
+    () => foodItems.filter((f) => selected.has(f.id) && f.category !== 'snacks').map((f) => f.id),
+    [foodItems, selected]
+  );
+
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const setMany = (ids: string[], on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => (on ? next.add(id) : next.delete(id)));
+      return next;
+    });
+
+  const toggleSelectMode = () => {
+    setSelectMode((on) => !on);
+    setSelected(new Set());
+  };
+
+  const handleConfirmGuessed = () => {
+    if (!window.confirm(`${stats.guessed} yemeğin isminden tahmin edilen etiketleri kalıcı olarak kaydedilsin mi? Sonra tek tek düzeltebilirsiniz.`)) return;
+    const count = confirmInferredTags();
+    addToast({ type: 'success', title: 'Tahminler kaydedildi', message: `${count} yemeğin etiketleri kalıcı hale getirildi.` });
+  };
+
+  const chip = (key: TagFilter, label: string, count?: number) => (
+    <button
+      key={key ?? 'all'}
+      type="button"
+      aria-pressed={filter === key}
+      onClick={() => setFilter(filter === key ? null : key)}
+      className={cn('text-xs px-2.5 py-1 rounded-full border transition-colors', filter === key ? FILTER_ON : FILTER_OFF)}
+    >
+      {label}
+      {count !== undefined ? ` · ${count}` : ''}
+    </button>
+  );
+
   return (
-    <div className="space-y-6">
+    <div className={cn('space-y-6', selectedIds.length > 0 && 'pb-72')}>
       <div>
         <h2 className="text-xl font-bold text-white">Ürün Havuzu Yönetimi</h2>
         <p className="text-sm text-white/50 mt-1">
           Kategorilere yemek ekleyin veya çıkarın. Etiket simgesiyle (<Tag className="inline w-3 h-3 -mt-0.5" />) yemeğin
-          etiketlerini düzenleyin; otomatik menü bu etiketlere göre kural uygular. Ana yemeklerde ayrıca yanına önerilen çorba, yan yemek ve
-          tamamlayıcıları seçebilirsiniz.
+          etiketlerini düzenleyin; değişiklikler anında kaydedilir. Otomatik menü bu etiketlere göre kural uygular. Ana yemeklerde
+          ayrıca yanına önerilen çorba, yan yemek ve tamamlayıcıları seçebilirsiniz.
         </p>
       </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleSelectMode}
+            aria-pressed={selectMode}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors',
+              selectMode ? FILTER_ON : 'border-white/10 text-white/70 hover:bg-white/5'
+            )}
+          >
+            <CheckSquare className="w-3.5 h-3.5" />
+            {selectMode ? 'Toplu seçimi kapat' : 'Toplu seç'}
+          </button>
+          {stats.guessed > 0 && (
+            <button
+              type="button"
+              onClick={handleConfirmGuessed}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-400/30 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20 text-xs font-medium transition-colors"
+              title="İsminden tahmin edilen etiketleri kalıcı yapar"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Tahminleri kaydet ({stats.guessed})
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-1.5 items-center">
+          {chip(null, 'Tümü')}
+          {chip(FILTER_NONE, 'Etiketsiz', stats.none)}
+          {chip(FILTER_GUESSED, 'Tahmini', stats.guessed)}
+          <button
+            type="button"
+            onClick={() => setShowTagFilters((v) => !v)}
+            aria-expanded={showTagFilters}
+            className="flex items-center gap-0.5 text-xs text-white/50 hover:text-white px-1.5 transition-colors"
+          >
+            Etikete göre
+            <ChevronDown className={cn('w-3 h-3 transition-transform', showTagFilters && 'rotate-180')} />
+          </button>
+        </div>
+
+        {(showTagFilters || (filter && filter !== FILTER_NONE && filter !== FILTER_GUESSED)) && (
+          <div className="flex flex-wrap gap-1.5">
+            {filterTags.map((tag) => chip(tag, getTagLabel(tag), stats.counts.get(tag) ?? 0))}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {CATEGORY_META.map((cat) => (
-          <CategoryPanel key={cat.key} categoryKey={cat.key} />
+        {CATEGORY_META.filter((cat) => !filter || cat.key !== 'snacks').map((cat) => (
+          <CategoryPanel
+            key={cat.key}
+            categoryKey={cat.key}
+            filter={filter}
+            selectMode={selectMode}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+            onSetMany={setMany}
+          />
         ))}
       </div>
+
+      {selectMode && selectedIds.length > 0 && <BulkBar ids={selectedIds} onClear={() => setSelected(new Set())} />}
     </div>
   );
 }
