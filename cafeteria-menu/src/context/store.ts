@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { FoodItem, DailyMenu, CategoryKey, ConflictWarning, PlannerMealKey, MealCourseField, FourCourseMeal, MainMealKey } from '@/types';
 import { SEED_DATA } from '@/lib/seedData';
+import { isTagAllowedForCategory } from '@/lib/tags';
 import { generateId, isSameWeek, MONTH_NAMES_TR, parseDate } from '@/lib/utils';
 import {
   createEmptyDailyMenu,
@@ -11,6 +12,8 @@ import {
   formatMenuGenerationError,
   generateAutoMonthMenus,
   getAllMenuItemIds,
+  getEffectiveTags,
+  inferTagsFromName,
   MAIN_MEAL_KEYS,
   MEAL_COURSE_FIELDS,
   type GeneratedMonth,
@@ -37,9 +40,14 @@ const cleanList = (values: string[]): string[] =>
 interface AppState {
   // Food pools
   foodItems: FoodItem[];
-  addFoodItem: (name: string, category: CategoryKey) => void;
+  addFoodItem: (name: string, category: CategoryKey, extra?: FoodItemMetadataChanges) => void;
   removeFoodItem: (id: string) => void;
-  updateFoodItem: (id: string, changes: FoodItemMetadataChanges) => void;
+  /** `silent`: otomatik kaydetmelerde "Kaydedildi" bildirimi çıkmaz. */
+  updateFoodItem: (id: string, changes: FoodItemMetadataChanges, options?: { silent?: boolean }) => void;
+  /** Seçili yemeklere etiket ekler / çıkarır. Değişen yemek sayısını döndürür. */
+  bulkUpdateTags: (ids: string[], addTags: string[], removeTags: string[]) => number;
+  /** Kayıtlı etiketi olmayan yemeklerin isimden tahmin edilen etiketlerini kalıcı yapar. Etkilenen sayıyı döndürür. */
+  confirmInferredTags: () => number;
 
   // Monthly menus
   menus: DailyMenu[];
@@ -229,7 +237,7 @@ export const useAppStore = create<AppState>()(
       toasts: [],
       activeTab: 'planner',
 
-      addFoodItem: (name, category) => {
+      addFoodItem: (name, category, extra) => {
         const trimmed = name.trim();
         if (!trimmed) return;
         // Prevent duplicate names in the same category
@@ -240,16 +248,24 @@ export const useAppStore = create<AppState>()(
           get().addToast({ type: 'error', title: 'Zaten Mevcut', message: `"${trimmed}" bu kategoride zaten var.` });
           return;
         }
+        const tags = extra?.tags ? cleanList(extra.tags) : [];
+        const mainIngredients = extra?.mainIngredients ? cleanList(extra.mainIngredients) : [];
         set((state) => ({
           foodItems: [
             ...state.foodItems,
-            { id: generateId(), name: trimmed, category },
+            {
+              id: generateId(),
+              name: trimmed,
+              category,
+              ...(tags.length > 0 ? { tags } : {}),
+              ...(mainIngredients.length > 0 ? { mainIngredients } : {}),
+            },
           ],
         }));
         get().addToast({ type: 'success', title: 'Eklendi', message: `"${trimmed}" başarıyla eklendi.` });
       },
 
-      updateFoodItem: (id, changes) => {
+      updateFoodItem: (id, changes, options) => {
         const target = get().foodItems.find((item) => item.id === id);
         if (!target) return;
         set((state) => ({
@@ -268,11 +284,52 @@ export const useAppStore = create<AppState>()(
               : item
           ),
         }));
-        get().addToast({
-          type: 'success',
-          title: 'Kaydedildi',
-          message: `"${target.name}" için etiketler ve eşlikçiler güncellendi.`,
-        });
+        if (!options?.silent) {
+          get().addToast({
+            type: 'success',
+            title: 'Kaydedildi',
+            message: `"${target.name}" için etiketler ve eşlikçiler güncellendi.`,
+          });
+        }
+      },
+
+      bulkUpdateTags: (ids, addTags, removeTags) => {
+        const idSet = new Set(ids);
+        const toAdd = cleanList(addTags);
+        const toRemove = new Set(cleanList(removeTags));
+        let changed = 0;
+        set((state) => ({
+          foodItems: state.foodItems.map((item) => {
+            if (!idSet.has(item.id) || item.category === 'snacks') return item;
+            const base = getEffectiveTags(item);
+            const next = cleanList([
+              ...base.filter((tag) => !toRemove.has(tag)),
+              ...toAdd.filter((tag) => isTagAllowedForCategory(tag, item.category)),
+            ]);
+            const unchanged =
+              item.tags !== undefined &&
+              item.tags.length === next.length &&
+              next.every((tag) => item.tags!.includes(tag));
+            if (unchanged) return item;
+            changed += 1;
+            return { ...item, tags: next };
+          }),
+        }));
+        return changed;
+      },
+
+      confirmInferredTags: () => {
+        let confirmed = 0;
+        set((state) => ({
+          foodItems: state.foodItems.map((item) => {
+            if (item.category === 'snacks' || item.tags?.length) return item;
+            const inferred = inferTagsFromName(item);
+            if (inferred.length === 0) return item;
+            confirmed += 1;
+            return { ...item, tags: inferred };
+          }),
+        }));
+        return confirmed;
       },
 
       removeFoodItem: (id) => {
