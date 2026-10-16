@@ -91,6 +91,34 @@ async function main() {
     assert.ok(!byName('Tavuk Sote Test').tags!.includes('yeni-etiket'));
   });
 
+  test('bulkUpdateCompanions: ekle / çıkar / değiştir yalnızca ana yemeklere ve geçerli kimliklere uygulanır', () => {
+    const mains = state().foodItems.filter((f) => f.category === 'mainCourses').slice(0, 3).map((f) => f.id);
+    const soups = state().foodItems.filter((f) => f.category === 'soups').slice(0, 3).map((f) => f.id);
+    const side = state().foodItems.find((f) => f.category === 'sideDishes')!.id;
+    const snack = state().foodItems.find((f) => f.category === 'snacks')!.id;
+    const soupId = state().foodItems.find((f) => f.category === 'soups')!.id;
+    const get = (id: string) => state().foodItems.find((f) => f.id === id)!.suggestedCompanions;
+
+    // Ekle: 3 ana yemek + 1 çorba (ana yemek olarak seçili çorba atlanır); ana yemek ve ara öğün kimliği eşlikçi olamaz.
+    const changed = state().bulkUpdateCompanions([...mains, soupId], [...soups.slice(0, 2), side, mains[0], snack, 'yok-id'], []);
+    assert.equal(changed, 3);
+    mains.forEach((id) => assert.deepEqual(get(id), [...soups.slice(0, 2), side]));
+    assert.equal(get(soupId), undefined, 'ana yemek olmayan yemek etkilenmemeli');
+
+    // Aynı işlemi tekrarlamak değişiklik sayılmaz.
+    assert.equal(state().bulkUpdateCompanions(mains, soups.slice(0, 2), []), 0);
+
+    // Çıkar: yalnızca belirtilenler silinir.
+    assert.equal(state().bulkUpdateCompanions(mains, [], [soups[0]]), 3);
+    mains.forEach((id) => assert.deepEqual(get(id), [soups[1], side]));
+
+    // Değiştir: mevcut liste tamamen yenisiyle yer değiştirir; boş liste ile temizler.
+    assert.equal(state().bulkUpdateCompanions(mains, [soups[2]], [], { replace: true }), 3);
+    mains.forEach((id) => assert.deepEqual(get(id), [soups[2]]));
+    assert.equal(state().bulkUpdateCompanions(mains, [], [], { replace: true }), 3);
+    mains.forEach((id) => assert.deepEqual(get(id), []));
+  });
+
   console.log(`\n${passed} test geçti.`);
   process.exit(0);
 }

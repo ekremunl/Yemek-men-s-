@@ -12,6 +12,7 @@ import { getEffectiveTags, inferTagsFromName, INGREDIENT_SUGGESTIONS } from '@/l
 import { getTagLabel, isKnownTag, TAG_GROUPS } from '@/lib/tags';
 import { cn } from '@/lib/utils';
 import { IngredientInput, TagPicker } from './TagPicker';
+import { CompanionPicker } from './CompanionPicker';
 
 const CAT_ICONS: Record<CategoryKey, React.ReactNode> = {
   soups: <Soup className="w-4 h-4" />,
@@ -61,21 +62,17 @@ const CAT_COLORS: Record<CategoryKey, { bg: string; border: string; badge: strin
 
 type CategoryColors = (typeof CAT_COLORS)[CategoryKey];
 
-const COMPANION_CATEGORIES: { key: CategoryKey; title: string }[] = [
-  { key: 'soups', title: 'Çorba' },
-  { key: 'sideDishes', title: 'Yan yemek' },
-  { key: 'complements', title: 'Tamamlayıcı' },
-];
-
 const uniq = (list: string[]) => Array.from(new Set(list));
 
 /** Etiket filtresi: null = hepsi, aksi halde etiket anahtarı veya özel filtre. */
 type TagFilter = string | null;
 const FILTER_NONE = '__none'; // etiketi (kayıtlı ya da tahmini) hiç olmayanlar
 const FILTER_GUESSED = '__guessed'; // yalnızca isminden tahmin edilen etiketi olanlar
+const FILTER_NO_COMPANION = '__no_companion'; // eşlikçisi seçilmemiş ana yemekler
 
 function matchesFilter(item: FoodItem, filter: TagFilter): boolean {
   if (!filter) return true;
+  if (filter === FILTER_NO_COMPANION) return item.category === 'mainCourses' && !item.suggestedCompanions?.length;
   if (item.category === 'snacks') return false; // ara öğünler etiketlenmez
   const effective = getEffectiveTags(item);
   if (filter === FILTER_NONE) return effective.length === 0;
@@ -120,6 +117,9 @@ function TagEditor({ item, colors, onClose }: { item: FoodItem; colors: Category
   const toggleTag = (key: string) => save({ tags: tags.includes(key) ? tags.filter((t) => t !== key) : [...tags, key] });
   const toggleCompanion = (id: string) =>
     save({ suggestedCompanions: companions.includes(id) ? companions.filter((c) => c !== id) : [...companions, id] });
+
+  const setManyCompanions = (ids: string[], on: boolean) =>
+    save({ suggestedCompanions: on ? uniq([...companions, ...ids]) : companions.filter((c) => !ids.includes(c)) });
 
   const handleReset = () => {
     if (!seedItem) return;
@@ -168,41 +168,18 @@ function TagEditor({ item, colors, onClose }: { item: FoodItem; colors: Category
           {showCompanions && (
             <div className="px-3 pb-3 space-y-3">
               <p className="text-[11px] leading-relaxed text-white/35">
-                Menü oluşturulurken bu ana yemeğin yanına her kategoriden buradaki yemeklerden biri tercih edilir.
-                Kurallara aykırıysa (aynı bileşen, aynı gün tekrar, hafta sonu senkronu vb.) başka yemek seçilir.
-                Her kategoride 2-3 öneri en iyi sonucu verir; tek öneri aynı gün öğle ve akşam çakışabilir.
+                <span className="text-amber-300/80 font-medium">Zorunlu:</span> Menü oluşturulurken bu ana yemeğin yanına,
+                eşlikçi seçtiğiniz her kategoriden (çorba / yan yemek / tamamlayıcı) yalnızca buradaki yemeklerden biri gelir.
+                Bir kategoride hiç seçim yapmazsanız o kategori serbest kalır. Her kategoride 2-3 eşlikçi seçmeniz önerilir;
+                tek seçenek aynı gün öğle ve akşam çakışmasına yol açabilir. Hafta sonu akşamı öğleyle aynı olan yemekler bu şarttan muaftır.
               </p>
-              {COMPANION_CATEGORIES.map(({ key, title }) => {
-                const options = foodItems.filter((food) => food.category === key);
-                const count = options.filter((option) => companions.includes(option.id)).length;
-                return (
-                  <div key={key}>
-                    <p className="text-[11px] font-medium text-white/40 mb-1.5">
-                      {title}
-                      {count > 0 ? ` · ${count}` : ''}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
-                      {options.map((option) => {
-                        const active = companions.includes(option.id);
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            aria-pressed={active}
-                            onClick={() => toggleCompanion(option.id)}
-                            className={cn(
-                              'text-xs px-2 py-1 rounded-full border transition-colors',
-                              active ? colors.badge : 'border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80'
-                            )}
-                          >
-                            {option.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+              <CompanionPicker
+                foodItems={foodItems}
+                selected={companions}
+                onToggle={toggleCompanion}
+                onSetMany={setManyCompanions}
+                activeClass={colors.badge}
+              />
             </div>
           )}
         </div>
@@ -391,7 +368,7 @@ function CategoryPanel({ categoryKey, filter, selectMode, selected, onToggleSele
                   </button>
                 </div>
 
-                {editable && !isEditing && (shownTags.length > 0 || companionCount > 0) && (
+                {editable && !isEditing && (shownTags.length > 0 || companionCount > 0 || categoryKey === 'mainCourses') && (
                   <div className="flex flex-wrap gap-1 px-3 pb-2 -mt-1">
                     {shownTags.slice(0, 4).map((tag) => (
                       <span
@@ -411,10 +388,20 @@ function CategoryPanel({ categoryKey, filter, selectMode, selected, onToggleSele
                         ★ {companionCount} eşlikçi
                       </span>
                     )}
+                    {categoryKey === 'mainCourses' && companionCount === 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(item.id)}
+                        title="Eşlikçi seçilmedi: bu ana yemeğin yanına her çorba / yan yemek gelebilir"
+                        className="text-[10px] px-1.5 py-0.5 rounded-full border border-dashed border-amber-400/40 text-amber-300/80 hover:bg-amber-400/10 transition-colors"
+                      >
+                        ⚠ eşlikçi yok
+                      </button>
+                    )}
                   </div>
                 )}
 
-                {editable && !isEditing && shownTags.length === 0 && companionCount === 0 && (
+                {editable && !isEditing && shownTags.length === 0 && companionCount === 0 && categoryKey !== 'mainCourses' && (
                   <button
                     type="button"
                     onClick={() => setEditingId(item.id)}
@@ -491,14 +478,23 @@ function CategoryPanel({ categoryKey, filter, selectMode, selected, onToggleSele
   );
 }
 
-/** Seçili yemeklere toplu etiket ekler / çıkarır. Ekranın altına yapışık çalışır. */
+/** Seçili yemeklere toplu etiket ya da eşlikçi uygular. Ekranın altına yapışık çalışır. */
 function BulkBar({ ids, onClear }: { ids: string[]; onClear: () => void }) {
   const bulkUpdateTags = useAppStore((s) => s.bulkUpdateTags);
+  const bulkUpdateCompanions = useAppStore((s) => s.bulkUpdateCompanions);
   const addToast = useAppStore((s) => s.addToast);
   const foodItems = useAppStore((s) => s.foodItems);
+  const [target, setTarget] = useState<'tags' | 'companions'>('tags');
   const [mode, setMode] = useState<'add' | 'remove'>('add');
+  const [companionMode, setCompanionMode] = useState<'add' | 'remove' | 'replace'>('add');
   const [picked, setPicked] = useState<string[]>([]);
+  const [pickedCompanions, setPickedCompanions] = useState<string[]>([]);
   const [open, setOpen] = useState(true);
+
+  const mainIds = useMemo(
+    () => foodItems.filter((f) => ids.includes(f.id) && f.category === 'mainCourses').map((f) => f.id),
+    [foodItems, ids]
+  );
 
   const customSuggestions = useMemo(
     () => uniq(foodItems.flatMap((f) => f.tags ?? []).filter((t) => !isKnownTag(t))).sort((a, b) => a.localeCompare(b, 'tr')),
@@ -506,8 +502,12 @@ function BulkBar({ ids, onClear }: { ids: string[]; onClear: () => void }) {
   );
 
   const toggle = (tag: string) => setPicked((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  const toggleCompanion = (id: string) =>
+    setPickedCompanions((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+  const setManyCompanions = (list: string[], on: boolean) =>
+    setPickedCompanions((prev) => (on ? uniq([...prev, ...list]) : prev.filter((c) => !list.includes(c))));
 
-  const apply = () => {
+  const applyTags = () => {
     if (picked.length === 0) return;
     const changed = bulkUpdateTags(ids, mode === 'add' ? picked : [], mode === 'remove' ? picked : []);
     addToast({
@@ -521,6 +521,38 @@ function BulkBar({ ids, onClear }: { ids: string[]; onClear: () => void }) {
     setPicked([]);
   };
 
+  const applyCompanions = () => {
+    const replace = companionMode === 'replace';
+    if (pickedCompanions.length === 0 && !replace) return;
+    if (replace && pickedCompanions.length === 0) {
+      if (!window.confirm(`${mainIds.length} ana yemeğin tüm eşlikçileri silinsin mi? (Eşlikçisiz kategori serbest kalır.)`)) return;
+    }
+    const changed = bulkUpdateCompanions(
+      mainIds,
+      companionMode === 'remove' ? [] : pickedCompanions,
+      companionMode === 'remove' ? pickedCompanions : [],
+      { replace }
+    );
+    addToast({
+      type: changed > 0 ? 'success' : 'error',
+      title: 'Toplu eşlikçi seçimi',
+      message:
+        changed > 0
+          ? `${changed} ana yemeğin eşlikçileri güncellendi.`
+          : 'Hiçbir ana yemek değişmedi (eşlikçiler zaten öyleydi).',
+    });
+    setPickedCompanions([]);
+  };
+
+  const isCompanions = target === 'companions';
+  const pickedCount = isCompanions ? pickedCompanions.length : picked.length;
+  const canApply = isCompanions
+    ? mainIds.length > 0 && (pickedCompanions.length > 0 || companionMode === 'replace')
+    : picked.length > 0;
+  const removing = isCompanions ? companionMode === 'remove' : mode === 'remove';
+  const segment = (active: boolean, tone: string) =>
+    cn('px-3 py-1.5 transition-colors', active ? tone : 'text-white/50 hover:bg-white/5');
+
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-slate-900/95 backdrop-blur">
       <div className="max-w-3xl mx-auto p-3 space-y-2">
@@ -530,31 +562,70 @@ function BulkBar({ ids, onClear }: { ids: string[]; onClear: () => void }) {
             <ChevronDown className={cn('w-4 h-4 transition-transform', open && 'rotate-180')} />
           </button>
           <div className="flex rounded-lg border border-white/10 overflow-hidden text-xs">
-            <button type="button" onClick={() => setMode('add')} className={cn('px-3 py-1.5 transition-colors', mode === 'add' ? 'bg-emerald-500/30 text-emerald-200' : 'text-white/50 hover:bg-white/5')}>
-              Etiket ekle
+            <button type="button" onClick={() => setTarget('tags')} className={segment(!isCompanions, 'bg-indigo-500/30 text-indigo-100')}>
+              Etiket
             </button>
-            <button type="button" onClick={() => setMode('remove')} className={cn('px-3 py-1.5 transition-colors', mode === 'remove' ? 'bg-red-500/30 text-red-200' : 'text-white/50 hover:bg-white/5')}>
-              Etiket çıkar
+            <button type="button" onClick={() => setTarget('companions')} className={segment(isCompanions, 'bg-indigo-500/30 text-indigo-100')}>
+              Eşlikçi
             </button>
           </div>
+          {isCompanions ? (
+            <div className="flex rounded-lg border border-white/10 overflow-hidden text-xs">
+              <button type="button" onClick={() => setCompanionMode('add')} className={segment(companionMode === 'add', 'bg-emerald-500/30 text-emerald-200')}>
+                Ekle
+              </button>
+              <button type="button" onClick={() => setCompanionMode('remove')} className={segment(companionMode === 'remove', 'bg-red-500/30 text-red-200')}>
+                Çıkar
+              </button>
+              <button type="button" onClick={() => setCompanionMode('replace')} className={segment(companionMode === 'replace', 'bg-amber-500/30 text-amber-200')}>
+                Değiştir
+              </button>
+            </div>
+          ) : (
+            <div className="flex rounded-lg border border-white/10 overflow-hidden text-xs">
+              <button type="button" onClick={() => setMode('add')} className={segment(mode === 'add', 'bg-emerald-500/30 text-emerald-200')}>
+                Etiket ekle
+              </button>
+              <button type="button" onClick={() => setMode('remove')} className={segment(mode === 'remove', 'bg-red-500/30 text-red-200')}>
+                Etiket çıkar
+              </button>
+            </div>
+          )}
           <button type="button" onClick={onClear} className="ml-auto text-xs text-white/50 hover:text-white transition-colors">
             Seçimi temizle
           </button>
           <button
             type="button"
-            onClick={apply}
-            disabled={picked.length === 0}
+            onClick={isCompanions ? applyCompanions : applyTags}
+            disabled={!canApply}
             className={cn(
               'px-4 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors disabled:opacity-30',
-              mode === 'add' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'
+              removing ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'
             )}
           >
-            Uygula{picked.length > 0 ? ` (${picked.length})` : ''}
+            Uygula{pickedCount > 0 ? ` (${pickedCount})` : ''}
           </button>
         </div>
+        {isCompanions && (
+          <p className={cn('text-[11px]', mainIds.length > 0 ? 'text-white/40' : 'text-amber-300/80')}>
+            {mainIds.length > 0
+              ? `${mainIds.length} ana yemeğe uygulanır${companionMode === 'replace' ? '; mevcut eşlikçilerin yerine geçer' : ''}. Çorba / yan yemek / tamamlayıcı seçili olsa bile yalnızca ana yemekler etkilenir.`
+              : 'Eşlikçi atamak için en az bir ana yemek seçin.'}
+          </p>
+        )}
         {open && (
           <div className="max-h-[38vh] overflow-y-auto pr-1">
-            <TagPicker selected={picked} onToggle={toggle} activeClass={mode === 'add' ? BADGE_ADD : BADGE_REMOVE} customSuggestions={customSuggestions} />
+            {isCompanions ? (
+              <CompanionPicker
+                foodItems={foodItems}
+                selected={pickedCompanions}
+                onToggle={toggleCompanion}
+                onSetMany={setManyCompanions}
+                activeClass={companionMode === 'remove' ? BADGE_REMOVE : BADGE_ADD}
+              />
+            ) : (
+              <TagPicker selected={picked} onToggle={toggle} activeClass={mode === 'add' ? BADGE_ADD : BADGE_REMOVE} customSuggestions={customSuggestions} />
+            )}
           </div>
         )}
       </div>
@@ -575,14 +646,16 @@ export default function PoolManager() {
     const counts = new Map<string, number>();
     let none = 0;
     let guessed = 0;
+    let noCompanion = 0;
     foodItems.forEach((item) => {
+      if (item.category === 'mainCourses' && !item.suggestedCompanions?.length) noCompanion += 1;
       if (item.category === 'snacks') return;
       const effective = getEffectiveTags(item);
       if (effective.length === 0) none += 1;
       else if (!item.tags?.length) guessed += 1;
       effective.forEach((tag) => counts.set(tag, (counts.get(tag) ?? 0) + 1));
     });
-    return { counts, none, guessed };
+    return { counts, none, guessed, noCompanion };
   }, [foodItems]);
 
   // Bilinen etiketler grup sırasıyla, ardından havuzda kullanılan özel etiketler.
@@ -642,7 +715,8 @@ export default function PoolManager() {
         <p className="text-sm text-white/50 mt-1">
           Kategorilere yemek ekleyin veya çıkarın. Etiket simgesiyle (<Tag className="inline w-3 h-3 -mt-0.5" />) yemeğin
           etiketlerini düzenleyin; değişiklikler anında kaydedilir. Otomatik menü bu etiketlere göre kural uygular. Ana yemeklerde
-          ayrıca yanına önerilen çorba, yan yemek ve tamamlayıcıları seçebilirsiniz.
+          ayrıca yanına gelecek çorba, yan yemek ve tamamlayıcıları (eşlikçiler) seçebilirsiniz; seçilen eşlikçiler menüde zorunludur.
+          Birçok ana yemeğe aynı anda eşlikçi atamak için «Toplu seç»i kullanın.
         </p>
       </div>
 
@@ -677,6 +751,7 @@ export default function PoolManager() {
           {chip(null, 'Tümü')}
           {chip(FILTER_NONE, 'Etiketsiz', stats.none)}
           {chip(FILTER_GUESSED, 'Tahmini', stats.guessed)}
+          {chip(FILTER_NO_COMPANION, 'Eşlikçisiz ana yemek', stats.noCompanion)}
           <button
             type="button"
             onClick={() => setShowTagFilters((v) => !v)}
@@ -688,7 +763,7 @@ export default function PoolManager() {
           </button>
         </div>
 
-        {(showTagFilters || (filter && filter !== FILTER_NONE && filter !== FILTER_GUESSED)) && (
+        {(showTagFilters || (filter && filter !== FILTER_NONE && filter !== FILTER_GUESSED && filter !== FILTER_NO_COMPANION)) && (
           <div className="flex flex-wrap gap-1.5">
             {filterTags.map((tag) => chip(tag, getTagLabel(tag), stats.counts.get(tag) ?? 0))}
           </div>

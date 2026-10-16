@@ -244,6 +244,49 @@ test('Önerilen eşlikçiler: ana yemeğin yanına listeden biri seçilir; sert 
   assert.ok(ratio >= 0.95, `öneriye uyum çok düşük: %${(ratio * 100).toFixed(1)}`);
 });
 
+test('Eşlikçiler ZORUNLU: liste olan kategoride öğün yalnızca listeden seçilir (hafta içi + elle bozulmuş menü yakalanır)', () => {
+  const COMPANIONS: Record<string, string[]> = {
+    m4: ['s2', 'd1', 'c6'], // Izgara Köfte: tek tek 1-2 öneri bile olsa kural katıdır
+    m3: ['s4', 's11', 'd9', 'c5'],
+  };
+  const pool: FoodItem[] = SEED_DATA.map((item) =>
+    COMPANIONS[item.id] ? { ...item, suggestedCompanions: COMPANIONS[item.id] } : item,
+  );
+  const cat = (id: string) => byId(pool).get(id)!.category;
+  for (let seed = 1; seed <= 4; seed++) {
+    const { menus } = generateAutoMonthMenus(pool, 2026, 9, [], { seed });
+    for (const menu of menus) {
+      for (const key of MEALS) {
+        const meal = menu[key];
+        const list = COMPANIONS[meal.mainCourse!];
+        if (!list) continue;
+        const weekendDinner = [0, 6].includes(weekdayOf(menu.date)) && key === 'dinner';
+        if (weekendDinner) continue; // hafta sonu akşamı öğleyle senkron: eşlikçi şartından muaf
+        for (const [field, category] of [['soup', 'soups'], ['sideDish', 'sideDishes'], ['complement', 'complements']] as const) {
+          const allowed = list.filter((id) => cat(id) === category);
+          if (allowed.length === 0) continue;
+          assert.ok(allowed.includes(meal[field]!), `${menu.date} ${key} ${field}: ${meal[field]} eşlikçi değil`);
+        }
+      }
+    }
+  }
+
+  // Elle bozulmuş menü: Izgara Köfte + listede olmayan çorba → ihlal.
+  const { menus } = generateAutoMonthMenus(pool, 2026, 9, [], { seed: 2 });
+  const bozuk: DailyMenu[] = structuredClone(menus);
+  const day = bozuk.find((m) => [1, 2, 3].includes(weekdayOf(m.date)))!;
+  day.lunch.mainCourse = 'm4';
+  day.lunch.soup = pool.find((i) => i.category === 'soups' && !COMPANIONS.m4.includes(i.id))!.id;
+  // m4'ün çorba eşlikçisi yok (yalnızca yan/tamamlayıcı) → çorba serbest; yan yemeği listede olmayanla boz.
+  day.lunch.sideDish = pool.find((i) => i.category === 'sideDishes' && !COMPANIONS.m4.includes(i.id))!.id;
+  const violations = validateDailyMenus(bozuk, pool);
+  assert.ok(violations.some((v) => v.ruleId === 'COMPANION_REQUIRED' && v.date === day.date), JSON.stringify(violations.map((v) => v.ruleId)));
+
+  // requireCompanions: false → eski (yumuşak) davranış, bu ihlal sayılmaz.
+  const relaxed = validateDailyMenus(bozuk, pool, { requireCompanions: false });
+  assert.ok(!relaxed.some((v) => v.ruleId === 'COMPANION_REQUIRED'));
+});
+
 test('Adapter ve dönüştürücüler', () => {
   const dishes = adaptSeedDataToDishes();
   assert.equal(dishes.length, SEED_DATA.filter((i) => i.category !== 'snacks').length);
