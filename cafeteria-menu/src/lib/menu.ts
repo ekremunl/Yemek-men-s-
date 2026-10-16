@@ -284,9 +284,26 @@ export function foodItemToDish(item: FoodItem): Dish | null {
 
 /** Bir yemek listesini (havuz) motorun `Dish` listesine çevirir; ara öğünler atlanır. */
 export function foodItemsToDishes(items: FoodItem[]): Dish[] {
+  const categoryById = new Map<string, DishCategory>();
+  for (const item of items) {
+    const category = CATEGORY_KEY_TO_DISH_CATEGORY[item.category];
+    if (category) categoryById.set(item.id, category);
+  }
+
   return items.flatMap((item) => {
     const dish = foodItemToDish(item);
-    return dish ? [dish] : [];
+    if (!dish) return [];
+    if (dish.category === 'ana_yemek' && dish.suggestedCompanionIds) {
+      // Eşlikçiler kategoriye göre ayrılır; havuzda olmayan / ana yemek olan kimlikler yok sayılır.
+      const byCategory: Partial<Record<DishCategory, string[]>> = {};
+      for (const id of dish.suggestedCompanionIds) {
+        const category = categoryById.get(id);
+        if (!category || category === 'ana_yemek') continue;
+        (byCategory[category] ??= []).push(id);
+      }
+      if (Object.keys(byCategory).length > 0) dish.companionsByCategory = byCategory;
+    }
+    return [dish];
   });
 }
 

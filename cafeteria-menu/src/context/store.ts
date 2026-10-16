@@ -46,6 +46,11 @@ interface AppState {
   updateFoodItem: (id: string, changes: FoodItemMetadataChanges, options?: { silent?: boolean }) => void;
   /** Seçili yemeklere etiket ekler / çıkarır. Değişen yemek sayısını döndürür. */
   bulkUpdateTags: (ids: string[], addTags: string[], removeTags: string[]) => number;
+  /**
+   * Seçili ANA YEMEKLERE eşlikçi ekler / çıkarır; `replace: true` ise mevcut listeyi `addIds` ile değiştirir.
+   * Yalnızca çorba / yan yemek / tamamlayıcı kimlikleri kabul edilir. Değişen yemek sayısını döndürür.
+   */
+  bulkUpdateCompanions: (ids: string[], addIds: string[], removeIds: string[], options?: { replace?: boolean }) => number;
   /** Kayıtlı etiketi olmayan yemeklerin isimden tahmin edilen etiketlerini kalıcı yapar. Etkilenen sayıyı döndürür. */
   confirmInferredTags: () => number;
 
@@ -313,6 +318,32 @@ export const useAppStore = create<AppState>()(
             if (unchanged) return item;
             changed += 1;
             return { ...item, tags: next };
+          }),
+        }));
+        return changed;
+      },
+
+      bulkUpdateCompanions: (ids, addIds, removeIds, options) => {
+        const idSet = new Set(ids);
+        const COMPANION_CATEGORIES: CategoryKey[] = ['soups', 'sideDishes', 'complements'];
+        const validIds = new Set(
+          get().foodItems.filter((f) => COMPANION_CATEGORIES.includes(f.category)).map((f) => f.id)
+        );
+        const toAdd = cleanList(addIds).filter((id) => validIds.has(id));
+        const toRemove = new Set(cleanList(removeIds));
+        let changed = 0;
+        set((state) => ({
+          foodItems: state.foodItems.map((item) => {
+            if (!idSet.has(item.id) || item.category !== 'mainCourses') return item;
+            const current = (item.suggestedCompanions ?? []).filter((id) => validIds.has(id));
+            const base = options?.replace ? [] : current.filter((id) => !toRemove.has(id));
+            const next = cleanList([...base, ...toAdd]);
+            const unchanged =
+              (item.suggestedCompanions ?? []).length === next.length &&
+              next.every((id) => item.suggestedCompanions!.includes(id));
+            if (unchanged) return item;
+            changed += 1;
+            return { ...item, suggestedCompanions: next };
           }),
         }));
         return changed;

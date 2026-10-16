@@ -45,6 +45,13 @@ export interface Dish {
    * önerilen çorba/yan/tamamlayıcıları). Sert kural değildir; skorlamada güçlü bonus verir.
    */
   suggestedCompanionIds?: string[];
+  /**
+   * Yalnızca ana yemekler için: eşlikçilerin KATEGORİYE göre ayrılmış hâli.
+   * Bir kategoride en az bir eşlikçi tanımlıysa, bu ana yemekle aynı öğündeki o kategorinin
+   * yemeği ZORUNLU olarak bu listeden seçilir (bkz. COMPANION_REQUIRED kuralı).
+   * Kategori için liste yoksa/boşsa o kategoride kısıt yoktur.
+   */
+  companionsByCategory?: Partial<Record<DishCategory, string[]>>;
 }
 
 /** Bir öğün: kategori başına en fazla bir yemek. */

@@ -66,6 +66,14 @@ export interface GeneratorConfig {
    */
   weekendSyncCategories: DishCategory[];
 
+  // --- Eşlikçiler ---
+  /**
+   * true → ana yemeğin eşlikçi listesi SERT kuraldır: ilgili kategoride liste varsa öğündeki
+   * çorba / yan yemek / tamamlayıcı yalnızca bu listeden seçilir. false → eski davranış (yalnızca skor bonusu).
+   * Hafta sonu akşamındaki senkron kategoriler (weekendSyncCategories) öğleden kopyalandığı için muaftır.
+   */
+  requireCompanions: boolean;
+
   // --- Yumuşak eşleşme cezaları (skorlama; kural çiğnetmez) ---
   /** Aynı öğünde bir yemekte `a`, diğerinde `b` etiketlerinden biri varsa `weight` kadar ceza. */
   softPairings: SoftPairing[];
@@ -104,6 +112,7 @@ export const DEFAULT_CONFIG: Omit<GeneratorConfig, 'seed'> = {
   maxConsecutiveProteinDays: 2,
   softCooldownDays: { ana_yemek: 10, çorba: 3, yan_urun: 2, tatli_meyve: 2 },
   weekendSyncCategories: [],
+  requireCompanions: true,
   softPairings: [],
   weights: {
     usage: 1,

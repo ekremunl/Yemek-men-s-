@@ -30,6 +30,7 @@ export type RuleId =
   | 'INTRA_INCOMPATIBLE_TAGS'
   | 'INTRA_CARB_MAIN_WITH_RICE_PASTA'
   | 'INTRA_DOMINANT_INGREDIENT'
+  | 'COMPANION_REQUIRED'
   | 'DAY_DUPLICATE_ITEM'
   | 'DAY_PROTEIN_REPEAT'
   | 'DAY_LEGUME_THEN_LIGHT'
@@ -117,6 +118,33 @@ export const RULES: readonly Rule[] = [
       return mealDishes(currentMeal(ctx)).every(
         (other) => !(other.mainIngredients ?? []).some((i) => mine.has(norm(i))),
       );
+    },
+  },
+  {
+    id: 'COMPANION_REQUIRED',
+    description:
+      'Ana yemeğin ilgili kategoride eşlikçisi tanımlıysa, aynı öğündeki çorba / yan yemek / tamamlayıcı bu eşlikçilerden biri olmalıdır.',
+    allows(dish, ctx) {
+      const cfg = ctx.config;
+      if (!cfg.requireCompanions) return true;
+      const day = currentDay(ctx);
+      // Hafta sonu akşamında senkron kategoriler öğleden kopyalanır; eşlikçi şartından muaftır.
+      const syncedHere = (category: DishCategory) =>
+        ctx.slot === 'aksam' && isWeekend(day) && cfg.weekendSyncCategories.includes(category);
+      const meal = currentMeal(ctx);
+
+      if (dish.category === 'ana_yemek') {
+        // Aday ana yemek, öğüne daha önce yerleşmiş (ör. senkron) yemekleri de eşlikçi olarak kabul etmeli.
+        return mealDishes(meal).every((other) => {
+          if (other.category === 'ana_yemek' || syncedHere(other.category)) return true;
+          const list = dish.companionsByCategory?.[other.category];
+          return !list?.length || list.includes(other.id);
+        });
+      }
+
+      if (syncedHere(dish.category)) return true;
+      const list = meal.ana_yemek?.companionsByCategory?.[dish.category];
+      return !list?.length || list.includes(dish.id);
     },
   },
 
