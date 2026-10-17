@@ -30,6 +30,7 @@ export type RuleId =
   | 'INTRA_INCOMPATIBLE_TAGS'
   | 'INTRA_CARB_MAIN_WITH_RICE_PASTA'
   | 'INTRA_DOMINANT_INGREDIENT'
+  | 'SERVING_TIME'
   | 'COMPANION_REQUIRED'
   | 'DAY_DUPLICATE_ITEM'
   | 'DAY_PROTEIN_REPEAT'
@@ -79,6 +80,19 @@ export const dayHasTag = (day: DayMenu, tag: Tag): boolean =>
 
 export const isWeekend = (day: DayMenu): boolean => day.weekday === 0 || day.weekday === 6;
 
+/**
+ * Servis zamanı etiketlerine göre yemek bu öğün + gün türünde yer alabilir mi?
+ * (Etiketsiz yemek her zaman uygundur.)
+ */
+export function servingAllows(dish: Dish, slot: MealSlot, weekend: boolean, cfg: GeneratorConfig): boolean {
+  const t = cfg.servingTags;
+  const mealTags = [t.ogle, t.aksam].filter((tag) => dish.tags.includes(tag));
+  if (mealTags.length > 0 && !mealTags.includes(t[slot])) return false;
+  const dayTags = [t.weekend, t.weekday].filter((tag) => dish.tags.includes(tag));
+  if (dayTags.length > 0 && !dayTags.includes(weekend ? t.weekend : t.weekday)) return false;
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Kurallar
 // ---------------------------------------------------------------------------
@@ -118,6 +132,21 @@ export const RULES: readonly Rule[] = [
       return mealDishes(currentMeal(ctx)).every(
         (other) => !(other.mainIngredients ?? []).some((i) => mine.has(norm(i))),
       );
+    },
+  },
+  {
+    id: 'SERVING_TIME',
+    description:
+      'Öğle / akşam / hafta sonu / hafta içi etiketi olan yemek yalnızca etiketli öğünde ve gün türünde yer alabilir.',
+    allows(dish, ctx) {
+      const cfg = ctx.config;
+      const weekend = isWeekend(currentDay(ctx));
+      if (!servingAllows(dish, ctx.slot, weekend, cfg)) return false;
+      // Hafta sonu öğlesindeki senkron kategoriler akşama da kopyalanır; akşamda da servis edilebilmeli.
+      if (ctx.slot === 'ogle' && weekend && cfg.weekendSyncCategories.includes(dish.category)) {
+        return servingAllows(dish, 'aksam', true, cfg);
+      }
+      return true;
     },
   },
   {

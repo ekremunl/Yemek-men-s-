@@ -9,7 +9,7 @@ import { useAppStore, FoodItemMetadataChanges } from '@/context/store';
 import { CategoryKey, FoodItem } from '@/types';
 import { CATEGORY_META, SEED_DATA } from '@/lib/seedData';
 import { getEffectiveTags, inferTagsFromName, INGREDIENT_SUGGESTIONS } from '@/lib/menu';
-import { getTagLabel, isKnownTag, TAG_GROUPS } from '@/lib/tags';
+import { getTagLabel, isKnownTag, TAG_GROUPS, servingTagsFirst } from '@/lib/tags';
 import { cn } from '@/lib/utils';
 import { IngredientInput, TagPicker } from './TagPicker';
 import { CompanionPicker } from './CompanionPicker';
@@ -321,7 +321,7 @@ function CategoryPanel({ categoryKey, filter, selectMode, selected, onToggleSele
             const isEditing = editingId === item.id;
             const isSelected = selected.has(item.id);
             const hasStoredTags = Boolean(item.tags?.length);
-            const shownTags = editable ? getEffectiveTags(item) : [];
+            const shownTags = editable ? servingTagsFirst(getEffectiveTags(item)) : [];
             const companionCount =
               categoryKey === 'mainCourses'
                 ? (item.suggestedCompanions ?? []).filter((id) => foodItems.some((food) => food.id === id)).length

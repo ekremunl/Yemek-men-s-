@@ -244,6 +244,66 @@ test('Önerilen eşlikçiler: ana yemeğin yanına listeden biri seçilir; sert 
   assert.ok(ratio >= 0.95, `öneriye uyum çok düşük: %${(ratio * 100).toFixed(1)}`);
 });
 
+test('Servis zamanı etiketleri: etiketli yemek yalnızca etiketli öğün / gün türünde yer alır', () => {
+  const of = (cat: string) => SEED_DATA.filter((i) => i.category === cat);
+  const soups = of('soups'), mains = of('mainCourses'), sides = of('sideDishes'), comps = of('complements');
+  const TAGS: Record<string, string[]> = {
+    [soups[0].id]: ['lunch'],
+    [soups[1].id]: ['dinner'],
+    [soups[2].id]: ['weekday'],
+    [soups[3].id]: ['weekend'],
+    [sides[0].id]: ['lunch', 'dinner'], // ikisi de → kısıt yok
+    [comps[0].id]: ['dinner', 'weekday'], // akşam VE hafta içi
+  };
+  const pool: FoodItem[] = SEED_DATA.map((item) =>
+    TAGS[item.id] ? { ...item, tags: [...getEffectiveTags(item), ...TAGS[item.id]] } : item,
+  );
+  const tagsOf = byId(pool);
+  for (let seed = 1; seed <= 4; seed++) {
+    const { menus } = generateAutoMonthMenus(pool, 2026, 9, [], { seed });
+    for (const menu of menus) {
+      const weekend = [0, 6].includes(weekdayOf(menu.date));
+      for (const key of MEALS) {
+        const ids = [menu[key].soup, menu[key].mainCourse, menu[key].sideDish, menu[key].complement];
+        for (const id of ids) {
+          const tags = tagsOf.get(id!)!.tags ?? [];
+          const meals = tags.filter((t) => t === 'lunch' || t === 'dinner');
+          const days = tags.filter((t) => t === 'weekend' || t === 'weekday');
+          if (meals.length) assert.ok(meals.includes(key), `${menu.date} ${key}: ${id} yanlış öğünde (${tags})`);
+          if (days.length) assert.ok(days.includes(weekend ? 'weekend' : 'weekday'), `${menu.date}: ${id} yanlış gün türünde`);
+        }
+      }
+    }
+  }
+
+  // Manuel doğrulama da ihlali yakalar: akşam çorbasını öğleye koy.
+  const { menus } = generateAutoMonthMenus(pool, 2026, 9, [], { seed: 2 });
+  const bozuk: DailyMenu[] = structuredClone(menus);
+  const day = bozuk.find((m) => [1, 2, 3].includes(weekdayOf(m.date)))!;
+  day.lunch.soup = soups[1].id;
+  const violations = validateDailyMenus(bozuk, pool);
+  assert.ok(violations.some((v) => v.ruleId === 'SERVING_TIME' && v.date === day.date), JSON.stringify(violations.map((v) => v.ruleId)));
+
+  // Tüm ana yemekler "Öğle" ise akşama ana yemek kalmaz → anlaşılır hata.
+  const allLunch: FoodItem[] = SEED_DATA.map((item) =>
+    item.category === 'mainCourses' ? { ...item, tags: [...getEffectiveTags(item), 'lunch'] } : item,
+  );
+  try {
+    generateAutoMonthMenus(allLunch, 2026, 9, [], { seed: 1 });
+    assert.fail('hata bekleniyordu');
+  } catch (e) {
+    assert.ok(e instanceof MenuGenerationError);
+    assert.match(formatMenuGenerationError(e), /akşam öğünü için uygun ana yemek yok/);
+  }
+
+  // Hafta sonu öğlesinde kopyalanan çorba akşamda da servis edilebilmeli: yalnız-öğle çorbası hafta sonu öğlesine girmez.
+  const { menus: m3 } = generateAutoMonthMenus(pool, 2026, 9, [], { seed: 3 });
+  for (const menu of m3.filter((m) => [0, 6].includes(weekdayOf(m.date)))) {
+    assert.notEqual(menu.lunch.soup, soups[0].id);
+    assert.notEqual(menu.lunch.soup, soups[1].id);
+  }
+});
+
 test('Eşlikçiler ZORUNLU: liste olan kategoride öğün yalnızca listeden seçilir (hafta içi + elle bozulmuş menü yakalanır)', () => {
   const COMPANIONS: Record<string, string[]> = {
     m4: ['s2', 'd1', 'c6'], // Izgara Köfte: tek tek 1-2 öneri bile olsa kural katıdır

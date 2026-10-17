@@ -66,6 +66,14 @@ export interface GeneratorConfig {
    */
   weekendSyncCategories: DishCategory[];
 
+  // --- Servis zamanı etiketleri ---
+  /**
+   * Yemekte bu etiketlerden biri varsa yemek YALNIZCA o öğünde / gün türünde yer alır (sert kural).
+   * Öğle ve akşam etiketlerinden ikisi de varsa iki öğünde de olabilir; hafta sonu / hafta içi için de aynı.
+   * Öğün ve gün etiketleri birlikte verilirse ikisi de sağlanmalıdır.
+   */
+  servingTags: { ogle: Tag; aksam: Tag; weekend: Tag; weekday: Tag };
+
   // --- Eşlikçiler ---
   /**
    * true → ana yemeğin eşlikçi listesi SERT kuraldır: ilgili kategoride liste varsa öğündeki
@@ -112,6 +120,7 @@ export const DEFAULT_CONFIG: Omit<GeneratorConfig, 'seed'> = {
   maxConsecutiveProteinDays: 2,
   softCooldownDays: { ana_yemek: 10, çorba: 3, yan_urun: 2, tatli_meyve: 2 },
   weekendSyncCategories: [],
+  servingTags: { ogle: 'lunch', aksam: 'dinner', weekend: 'weekend', weekday: 'weekday' },
   requireCompanions: true,
   softPairings: [],
   weights: {

@@ -8,7 +8,7 @@ export interface TagOption {
 }
 
 export interface TagGroup {
-  id: 'protein' | 'nature' | 'side' | 'other';
+  id: 'serving' | 'protein' | 'nature' | 'side' | 'other';
   title: string;
   /** Yalnızca bu kategorilerde gösterilir (verilmezse hepsinde). */
   onlyForCategories?: string[];
@@ -16,6 +16,16 @@ export interface TagGroup {
 }
 
 export const TAG_GROUPS: TagGroup[] = [
+  {
+    id: 'serving',
+    title: 'Servis zamanı (etiketliyse yalnızca o zamanda)',
+    tags: [
+      { key: 'lunch', label: 'Öğle' },
+      { key: 'dinner', label: 'Akşam' },
+      { key: 'weekend', label: 'Hafta sonu' },
+      { key: 'weekday', label: 'Hafta içi' },
+    ],
+  },
   {
     id: 'protein',
     title: 'Protein',
@@ -90,4 +100,26 @@ export function isTagAllowedForCategory(key: string, category: string): boolean 
 /** Özel etiket yazımını tutarlı hale getirir (küçük harf, tek boşluk, virgülsüz). */
 export function normalizeCustomTag(value: string): string {
   return value.replace(/,/g, ' ').trim().replace(/\s+/g, ' ').toLocaleLowerCase('tr-TR');
+}
+
+// --- Servis zamanı etiketleri ------------------------------------------------
+// Öğün etiketleri (lunch / dinner): yemek yalnızca etiketli öğünlerde yer alır; ikisi de seçiliyse ikisinde de olabilir.
+// Gün etiketleri (weekend / weekday): yemek yalnızca etiketli gün türünde yer alır.
+// İki gruptan da etiket varsa ikisi birden sağlanmalıdır (ör. Öğle + Hafta sonu = yalnızca hafta sonu öğlesi).
+
+export const SERVING_TAG_KEYS = ['lunch', 'dinner', 'weekend', 'weekday'] as const;
+
+/** Etiket listesine göre yemek bu öğün / gün türünde servis edilebilir mi? Servis etiketi yoksa her zaman evet. */
+export function isServedAt(tags: readonly string[], meal: 'lunch' | 'dinner', weekend: boolean): boolean {
+  const mealTags = tags.filter((t) => t === 'lunch' || t === 'dinner');
+  if (mealTags.length > 0 && !mealTags.includes(meal)) return false;
+  const dayTags = tags.filter((t) => t === 'weekend' || t === 'weekday');
+  if (dayTags.length > 0 && !dayTags.includes(weekend ? 'weekend' : 'weekday')) return false;
+  return true;
+}
+
+/** Servis zamanı etiketlerini listenin başına alır (rozet gösteriminde öne çıksın diye). */
+export function servingTagsFirst(tags: readonly string[]): string[] {
+  const isServing = (t: string) => (SERVING_TAG_KEYS as readonly string[]).includes(t);
+  return [...tags.filter(isServing), ...tags.filter((t) => !isServing(t))];
 }

@@ -7,7 +7,7 @@
 //   • Aday tükenirse bir önceki karara dönülür (chronological backtracking).
 //   • Takılırsa farklı rastgele sıralamayla yeniden başlanır (random restart).
 import { resolveConfig, type GeneratorConfig, type GeneratorOptions } from './config';
-import { RULES, findViolation, type RuleContext, type RuleId } from './rules';
+import { RULES, findViolation, servingAllows, type RuleContext, type RuleId } from './rules';
 import { rankCandidates } from './scoring';
 import {
   CATEGORY_ORDER,
@@ -140,6 +140,37 @@ function preflight(config: GeneratorConfig, byCategory: Record<DishCategory, Dis
     }
     if (practical < 4) {
       warnings.push(`Az sayıda '${config.practicalTag}' ana yemek (${practical}); hafta sonları sık tekrar edebilir.`);
+    }
+  }
+
+  // Servis zamanı etiketleri: her gün türü + öğün + kategori için en az bir uygun yemek olmalı.
+  const CATEGORY_LABEL: Record<DishCategory, string> = {
+    çorba: 'çorba',
+    ana_yemek: 'ana yemek',
+    yan_urun: 'yan yemek',
+    tatli_meyve: 'tamamlayıcı',
+  };
+  for (const slot of MEAL_SLOTS) {
+    for (const weekend of [false, true]) {
+      for (const cat of template[slot]) {
+        const synced = config.weekendSyncCategories.includes(cat) && template.ogle.includes(cat);
+        // Hafta sonu akşamında senkron kategoriler öğleden kopyalanır; ayrıca aranmaz.
+        if (weekend && slot === 'aksam' && synced) continue;
+        const syncedAtLunch = weekend && slot === 'ogle' && synced;
+        const usable = byCategory[cat].some(
+          (dish) =>
+            servingAllows(dish, slot, weekend, config) && (!syncedAtLunch || servingAllows(dish, 'aksam', true, config)),
+        );
+        if (!usable) {
+          throw new MenuGenerationError(
+            `${weekend ? 'Hafta sonu' : 'Hafta içi'} ${SLOT_LABEL[slot]} öğünü için uygun ${CATEGORY_LABEL[cat]} yok. ` +
+              'Yemeklerdeki Öğle / Akşam / Hafta sonu / Hafta içi etiketlerini kontrol edin' +
+              (syncedAtLunch
+                ? ' (hafta sonu öğlesindeki çorba, yan yemek ve tamamlayıcı akşama da kopyalandığı için akşamda da servis edilebilmeli).'
+                : '.'),
+          );
+        }
+      }
     }
   }
 
