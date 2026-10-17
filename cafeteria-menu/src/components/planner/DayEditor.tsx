@@ -17,11 +17,13 @@ import { CATEGORY_META } from '@/lib/seedData';
 import {
   CATEGORY_TO_COURSE_FIELD,
   COURSE_LABELS_TR,
+  getEffectiveTags,
   COURSE_TO_CATEGORY_KEY,
   MAIN_MEAL_KEYS,
   MEAL_LABELS_TR,
   PLANNER_MEAL_KEYS,
 } from '@/lib/menu';
+import { isServedAt } from '@/lib/tags';
 import { cn, formatDateLabelTR, parseDate } from '@/lib/utils';
 
 const CAT_ICONS: Record<CategoryKey, React.ReactNode> = {
@@ -127,8 +129,17 @@ export default function DayEditor({ date, onClose }: Props) {
 
         {MAIN_MEAL_CATEGORIES.map((category) => {
           const field = CATEGORY_TO_COURSE_FIELD[category.key] as MealCourseField;
-          const items = foodItems.filter((item) => item.category === category.key);
           const selected = meal?.[field] || '';
+          const inCategory = foodItems.filter((item) => item.category === category.key);
+          // Servis zamanı etiketi (Öğle / Akşam / Hafta sonu / Hafta içi) olan yemekler yalnızca uygun öğünde listelenir.
+          // Hafta sonu öğlesindeki çorba / yan yemek / tamamlayıcı akşama da kopyalandığı için akşamda da servis edilebilmeli.
+          const copiedToDinner = isWeekend && mealKey === 'lunch' && category.key !== 'mainCourses';
+          const items = inCategory.filter((item) => {
+            if (item.id === selected) return true; // mevcut seçim kaybolmasın
+            const tags = getEffectiveTags(item);
+            return isServedAt(tags, mealKey, isWeekend) && (!copiedToDinner || isServedAt(tags, 'dinner', isWeekend));
+          });
+          const hiddenCount = inCategory.length - items.length;
           const isMainConflict = field === 'mainCourse' && conflicts.length > 0;
 
           return (
@@ -165,6 +176,11 @@ export default function DayEditor({ date, onClose }: Props) {
                   </option>
                 ))}
               </select>
+              {hiddenCount > 0 && (
+                <p className="mt-1 text-[11px] text-white/35">
+                  {hiddenCount} yemek servis zamanı etiketi nedeniyle bu öğünde gizlendi.
+                </p>
+              )}
 
               {isMainConflict && (
                 <div className="mt-1.5 flex items-start gap-1.5 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
