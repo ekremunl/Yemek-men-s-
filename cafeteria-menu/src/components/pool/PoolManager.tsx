@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Trash2, Soup, UtensilsCrossed, Salad, Apple, Search, Cookie, Tag, RotateCcw,
-  CheckSquare, Square, Sparkles, ChevronDown,
+  CheckSquare, Square, Sparkles, ChevronDown, Flame, BookOpen, Link2Off,
 } from 'lucide-react';
 import { useAppStore, FoodItemMetadataChanges } from '@/context/store';
 import { CategoryKey, FoodItem } from '@/types';
@@ -13,6 +13,8 @@ import { getTagLabel, isKnownTag, TAG_GROUPS, servingTagsFirst } from '@/lib/tag
 import { cn } from '@/lib/utils';
 import { IngredientInput, TagPicker } from './TagPicker';
 import { CompanionPicker } from './CompanionPicker';
+import ItemPicker from '@/components/ui/ItemPicker';
+import { matchRecipes } from '@/lib/mutfak';
 
 const CAT_ICONS: Record<CategoryKey, React.ReactNode> = {
   soups: <Soup className="w-4 h-4" />,
@@ -85,6 +87,104 @@ const BADGE_REMOVE = 'bg-red-500/20 text-red-300 border-red-500/30';
 const FILTER_ON = 'bg-indigo-500/25 text-indigo-200 border-indigo-400/40';
 const FILTER_OFF = 'border-white/10 text-white/50 hover:bg-white/5 hover:text-white/80';
 
+/** Yemeğin kalorisi (kcal/porsiyon) ve Mutfaktakip reçete bağlantısı. Değişiklikler anında kaydedilir. */
+function ItemMetaFields({ item }: { item: FoodItem }) {
+  const setCalories = useAppStore((s) => s.setCalories);
+  const linkRecipe = useAppStore((s) => s.linkRecipe);
+  const recipes = useAppStore((s) => s.recipes);
+  const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const [kcal, setKcal] = useState(item.calories ? String(item.calories) : '');
+
+  const recipeList = useMemo(() => Object.values(recipes).sort((a, b) => a.name.localeCompare(b.name, 'tr')), [recipes]);
+  const linked = item.recipeId ? recipes[item.recipeId] : undefined;
+  const suggestions = useMemo(() => {
+    const match = matchRecipes([item], recipeList)[0];
+    return match ? (match.exact ? [match.exact] : match.suggestions).map((r) => r.id) : [];
+  }, [item, recipeList]);
+  const pickerItems = useMemo<FoodItem[]>(
+    () => recipeList.map((r) => ({ id: r.id, name: r.name, category: 'mainCourses' as CategoryKey })),
+    [recipeList]
+  );
+
+  const commitKcal = () => {
+    const n = Number(kcal.replace(',', '.'));
+    setCalories(item.id, Number.isFinite(n) && n > 0 ? n : null);
+    if (!(Number.isFinite(n) && n > 0)) setKcal('');
+  };
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-3">
+      <div>
+        <label className="flex items-center gap-1.5 text-[11px] font-medium text-white/50 mb-1.5" htmlFor={`kcal-${item.id}`}>
+          <Flame className="w-3.5 h-3.5 text-orange-300" />
+          Kalori (porsiyon başına)
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            id={`kcal-${item.id}`}
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={kcal}
+            onChange={(e) => setKcal(e.target.value)}
+            onBlur={commitKcal}
+            onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget.blur(), undefined)}
+            placeholder="örn. 250"
+            className="w-32 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/30"
+          />
+          <span className="text-xs text-white/40">kcal</span>
+        </div>
+      </div>
+
+      <div>
+        <p className="flex items-center gap-1.5 text-[11px] font-medium text-white/50 mb-1.5">
+          <BookOpen className="w-3.5 h-3.5 text-emerald-300" />
+          Mutfaktakip reçetesi
+        </p>
+        {recipeList.length === 0 ? (
+          <p className="text-[11px] text-white/40 leading-relaxed">
+            Henüz reçete içe aktarılmadı.{' '}
+            <button type="button" onClick={() => setActiveTab('settings')} className="underline underline-offset-2 text-indigo-300">
+              Ayarlar → Mutfaktakip
+            </button>
+            {' '}bölümünden alın.
+          </p>
+        ) : (
+          <div className="flex items-stretch gap-2">
+            <div className="flex-1 min-w-0">
+              <ItemPicker
+                items={pickerItems}
+                value={item.recipeId ?? null}
+                onChange={(id) => linkRecipe(item.id, id)}
+                title={`"${item.name}" için reçete seç`}
+                placeholder="Reçete bağla…"
+                suggestedIds={suggestions}
+                suggestedLabel="benzer"
+              />
+            </div>
+            {item.recipeId && (
+              <button
+                type="button"
+                onClick={() => linkRecipe(item.id, null)}
+                aria-label="Reçete bağlantısını kaldır"
+                className="w-12 shrink-0 flex items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/50 active:bg-white/15"
+              >
+                <Link2Off className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
+        {item.recipeId && !linked && recipeList.length > 0 && (
+          <p className="mt-1 text-[11px] text-amber-300/80">Bağlı reçete Mutfaktakip kopyasında bulunamadı; yeniden içe aktarın.</p>
+        )}
+        {linked && (
+          <p className="mt-1 text-[11px] text-white/40">{linked.ings.length} malzeme · kişi başı miktarlar malzeme listesinde kullanılır</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Bir yemeğin etiketlerini ve baskın bileşenlerini düzenleyen satır içi panel. Değişiklikler anında kaydedilir. */
 function TagEditor({ item, colors, onClose }: { item: FoodItem; colors: CategoryColors; onClose: () => void }) {
   const updateFoodItem = useAppStore((s) => s.updateFoodItem);
@@ -129,6 +229,21 @@ function TagEditor({ item, colors, onClose }: { item: FoodItem; colors: Category
 
   return (
     <div className="mx-2 mb-2 rounded-xl border border-white/10 bg-black/20 p-3 space-y-3">
+      <ItemMetaFields item={item} />
+
+      {item.category === 'snacks' ? (
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-emerald-400/70">✓ Değişiklikler otomatik kaydedilir</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className={cn('ml-auto px-4 min-h-[2.5rem] rounded-lg text-white text-xs font-medium transition-colors', colors.btn)}
+          >
+            Kapat
+          </button>
+        </div>
+      ) : (
+      <>
       {!hasStoredTags && (
         <p className="text-[11px] text-white/40">
           Bu yemeğin kayıtlı etiketi yok; gösterilenler isminden tahmin edildi. Bir etikete dokunduğunuzda tahminler de kaydedilir.
@@ -214,6 +329,8 @@ function TagEditor({ item, colors, onClose }: { item: FoodItem; colors: Category
           </button>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
@@ -307,7 +424,7 @@ function CategoryPanel({ categoryKey, filter, selectMode, selected, onToggleSele
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Ara..."
-            className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
+            className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-2.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
           />
         </div>
       </div>
@@ -329,7 +446,7 @@ function CategoryPanel({ categoryKey, filter, selectMode, selected, onToggleSele
 
             return (
               <div key={item.id} className={cn('rounded-lg hover:bg-white/5 transition-colors', isSelected && 'bg-indigo-500/10')}>
-                <div className="flex items-center justify-between group px-3 py-2">
+                <div className="flex items-center justify-between group pl-3 pr-1 py-0.5 min-h-[2.75rem]">
                   {selectMode && editable && (
                     <button
                       type="button"
@@ -347,26 +464,42 @@ function CategoryPanel({ categoryKey, filter, selectMode, selected, onToggleSele
                   >
                     {item.name}
                   </span>
-                  {editable && (
-                    <button
-                      type="button"
-                      onClick={() => setEditingId(isEditing ? null : item.id)}
-                      className={cn('ml-2 shrink-0 transition-colors', isEditing ? colors.text : 'text-white/30 hover:text-white/80')}
-                      title="Etiketleri düzenle"
-                      aria-label={`${item.name} etiketlerini düzenle`}
-                      aria-expanded={isEditing}
-                    >
-                      <Tag className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(isEditing ? null : item.id)}
+                    className={cn('ml-1 shrink-0 w-10 h-10 flex items-center justify-center rounded-lg transition-colors', isEditing ? colors.text : 'text-white/40 hover:text-white/80')}
+                    title={editable ? 'Etiket, kalori ve reçete' : 'Kalori ve reçete'}
+                    aria-label={`${item.name} ayrıntılarını düzenle`}
+                    aria-expanded={isEditing}
+                  >
+                    <Tag className="w-4 h-4" />
+                  </button>
                   <button
                     onClick={() => removeFoodItem(item.id)}
-                    className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 transition-all ml-2 shrink-0"
+                    className="hover-reveal opacity-0 group-hover:opacity-100 w-10 h-10 flex items-center justify-center rounded-lg text-red-400/70 hover:text-red-400 active:bg-red-500/10 transition-all shrink-0"
                     title="Sil"
+                    aria-label={`${item.name} sil`}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
+
+                {!isEditing && (item.calories || item.recipeId) && (
+                  <div className="flex flex-wrap gap-1 px-3 pb-1.5 -mt-0.5">
+                    {item.calories ? (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border border-orange-400/30 text-orange-300">
+                        <Flame className="w-2.5 h-2.5" />
+                        {item.calories} kcal
+                      </span>
+                    ) : null}
+                    {item.recipeId ? (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border border-emerald-400/30 text-emerald-300">
+                        <BookOpen className="w-2.5 h-2.5" />
+                        reçeteli
+                      </span>
+                    ) : null}
+                  </div>
+                )}
 
                 {editable && !isEditing && (shownTags.length > 0 || companionCount > 0 || categoryKey === 'mainCourses') && (
                   <div className="flex flex-wrap gap-1 px-3 pb-2 -mt-1">
@@ -427,9 +560,9 @@ function CategoryPanel({ categoryKey, filter, selectMode, selected, onToggleSele
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
             placeholder="Yeni ürün ekle..."
-            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
+            className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-lg px-3 py-3 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
           />
-          <button onClick={handleAdd} className={cn('px-3 py-2 rounded-lg text-white text-sm font-medium transition-colors shrink-0', colors.btn)}>
+          <button onClick={handleAdd} className={cn('w-12 flex items-center justify-center rounded-lg text-white text-sm font-medium transition-colors shrink-0', colors.btn)}>
             <Plus className="w-4 h-4" />
           </button>
         </div>
@@ -554,7 +687,7 @@ function BulkBar({ ids, onClear }: { ids: string[]; onClear: () => void }) {
     cn('px-3 py-1.5 transition-colors', active ? tone : 'text-white/50 hover:bg-white/5');
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-slate-900/95 backdrop-blur">
+    <div className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] lg:bottom-0 z-40 border-t border-white/10 bg-slate-900/95 backdrop-blur">
       <div className="max-w-3xl mx-auto p-3 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex items-center gap-1 text-sm font-semibold text-white">
@@ -712,7 +845,7 @@ export default function PoolManager() {
     <div className={cn('space-y-6', selectedIds.length > 0 && 'pb-72')}>
       <div>
         <h2 className="text-xl font-bold text-white">Ürün Havuzu Yönetimi</h2>
-        <p className="text-sm text-white/50 mt-1">
+        <p className="text-sm text-white/50 mt-1 hidden sm:block">
           Kategorilere yemek ekleyin veya çıkarın. Etiket simgesiyle (<Tag className="inline w-3 h-3 -mt-0.5" />) yemeğin
           etiketlerini düzenleyin; değişiklikler anında kaydedilir. Otomatik menü bu etiketlere göre kural uygular. Ana yemeklerde
           ayrıca yanına gelecek çorba, yan yemek ve tamamlayıcıları (eşlikçiler) seçebilirsiniz; seçilen eşlikçiler menüde zorunludur.

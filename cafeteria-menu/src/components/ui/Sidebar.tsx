@@ -1,14 +1,10 @@
 // src/components/ui/Sidebar.tsx
 'use client';
-import { CalendarDays, Database, Download, ChefHat } from 'lucide-react';
+import { ChefHat } from 'lucide-react';
 import { useAppStore } from '@/context/store';
 import { cn } from '@/lib/utils';
 
-const TABS = [
-  { id: 'planner' as const, label: 'Menü Planlayıcı', labelShort: 'Planlayıcı', icon: CalendarDays },
-  { id: 'pool' as const, label: 'Ürün Havuzu', labelShort: 'Havuz', icon: Database },
-  { id: 'export' as const, label: 'Dışa Aktar', labelShort: 'Aktar', icon: Download },
-];
+import { TABS } from './tabs';
 
 export default function Sidebar() {
   const { activeTab, setActiveTab } = useAppStore((s) => ({

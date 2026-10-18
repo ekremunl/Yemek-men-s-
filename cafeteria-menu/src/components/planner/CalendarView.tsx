@@ -1,7 +1,7 @@
 // src/components/planner/CalendarView.tsx
 'use client';
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, AlertTriangle, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, Check, Lock } from 'lucide-react';
 import { useAppStore } from '@/context/store';
 import {
   cn,
@@ -22,6 +22,7 @@ import {
 } from '@/lib/menu';
 import { MainMealKey, PlannerMealKey } from '@/types';
 import DayEditor from './DayEditor';
+import WeekView from './WeekView';
 
 const SUMMARY_STYLES: Record<PlannerMealKey, string> = {
   lunch: 'border-amber-500/20 bg-amber-500/10 text-amber-100',
@@ -30,13 +31,14 @@ const SUMMARY_STYLES: Record<PlannerMealKey, string> = {
 };
 
 export default function CalendarView() {
-  const { currentYear, currentMonth, setCurrentMonth, menus, foodItems, checkConflicts } = useAppStore((s) => ({
+  const { currentYear, currentMonth, setCurrentMonth, menus, foodItems, checkConflicts, lockedDates } = useAppStore((s) => ({
     currentYear: s.currentYear,
     currentMonth: s.currentMonth,
     setCurrentMonth: s.setCurrentMonth,
     menus: s.menus,
     foodItems: s.foodItems,
     checkConflicts: s.checkConflicts,
+    lockedDates: s.lockedDates,
   }));
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -89,12 +91,12 @@ export default function CalendarView() {
       <div className="flex items-center justify-between">
         <button
           onClick={prevMonth}
-          className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+          className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/15 text-white/60 hover:text-white transition-colors"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-white tracking-tight">
+          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
             {MONTH_NAMES_TR[currentMonth]} {currentYear}
           </h2>
           <p className="text-xs text-white/40 mt-0.5">
@@ -103,12 +105,19 @@ export default function CalendarView() {
         </div>
         <button
           onClick={nextMonth}
-          className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+          className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/15 text-white/60 hover:text-white transition-colors"
         >
           <ChevronRight className="w-5 h-5" />
         </button>
       </div>
 
+      {/* Mobil: hafta görünümü */}
+      <div className="md:hidden">
+        <WeekView />
+      </div>
+
+      {/* Masaüstü: ay ızgarası */}
+      <div className="hidden md:block space-y-4">
       {/* Day headers */}
       <div className="grid grid-cols-7 gap-1">
         {DAY_NAMES_TR.map((day) => (
@@ -174,6 +183,12 @@ export default function CalendarView() {
                 })}
               </div>
 
+              {lockedDates.includes(dateStr) && (
+                <div className="absolute bottom-1 right-1">
+                  <Lock className="w-2.5 h-2.5 text-amber-300" />
+                </div>
+              )}
+
               {/* Full check */}
               {isDayComplete(menu) && !hasConflict && (
                 <div className="absolute top-1 right-1">
@@ -214,6 +229,8 @@ export default function CalendarView() {
           <Check className="w-3 h-3 text-emerald-400" />
           <span>Tam</span>
         </div>
+      </div>
+
       </div>
 
       {selectedDate && (

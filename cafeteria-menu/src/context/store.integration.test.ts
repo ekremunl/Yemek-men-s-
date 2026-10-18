@@ -86,9 +86,9 @@ async function main() {
     assert.deepEqual(validateDailyMenus(state().menus, state().foodItems), [], 'ay sınırında ihlal var');
   });
 
-  test('Üretilen menü localStorage kaydına (v3) yazılır', () => {
+  test('Üretilen menü localStorage kaydına (v4) yazılır', () => {
     const saved = JSON.parse(memory.get(STORAGE_KEY)!);
-    assert.equal(saved.version, 3);
+    assert.equal(saved.version, 4);
     assert.equal(saved.state.menus.length, 61);
   });
 
