@@ -97,6 +97,11 @@ export interface GeneratorConfig {
   maxBacktracksPerAttempt: number;
   /** Önceki ayın son günleri (eskiden yeniye). Bekleme kurallarının ay sınırını aşması için. */
   previousDays: DayMenu[];
+  /**
+   * Sabit (kilitli) günler: bu ayın içindeki bu günlerin dolu öğünleri AYNEN korunur, çözücü yalnızca boş
+   * yerleri doldurur. Sabit yemekler diğer günlerin bekleme/protein kurallarını da etkiler.
+   */
+  fixedDays: DayMenu[];
 }
 
 export type GeneratorOptions = Partial<Omit<GeneratorConfig, 'weights'>> & {
@@ -136,6 +141,7 @@ export const DEFAULT_CONFIG: Omit<GeneratorConfig, 'seed'> = {
   maxAttempts: 8,
   maxBacktracksPerAttempt: 20_000,
   previousDays: [],
+  fixedDays: [],
 };
 
 export function resolveConfig(options: GeneratorOptions = {}): GeneratorConfig {
@@ -146,6 +152,7 @@ export function resolveConfig(options: GeneratorOptions = {}): GeneratorConfig {
     softCooldownDays: { ...DEFAULT_CONFIG.softCooldownDays, ...options.softCooldownDays },
     weights: { ...DEFAULT_CONFIG.weights, ...options.weights },
     previousDays: options.previousDays ?? [],
+    fixedDays: options.fixedDays ?? [],
     seed: options.seed ?? Math.floor(Math.random() * 0x7fffffff),
   };
 }

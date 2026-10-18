@@ -32,3 +32,34 @@ select option {
   background-color: #1e293b;
   color: #f8fafc;
 }
+
+/* --- Mobil / PWA ------------------------------------------------------- */
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+body {
+  overscroll-behavior-y: none;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+/* iOS, 16px'ten küçük alanlara odaklanınca sayfayı yakınlaştırır. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+/* Dokunmatik cihazlarda hover'a bağlı gizli düğmeler her zaman görünsün. */
+@media (hover: none) {
+  .hover-reveal {
+    opacity: 1 !important;
+  }
+}

@@ -6,10 +6,13 @@ import {
   MainMealKey,
   MealCourseField,
   PlannerMealKey,
+  RuleSettings,
 } from '@/types';
 import { SEED_DATA } from './seedData';
 import { createLocalDate, formatDate, formatShortDateTR } from './utils';
-import { generateMonthlyMenu, MenuGenerationError, RULES, validateMonthlyMenu } from './menu-generator';
+import { generateMonthlyMenu, MenuGenerationError, RULES, validateMonthlyMenu, findViolation } from './menu-generator';
+import { resolveConfig } from './menu-generator/config';
+import { rankCandidates } from './menu-generator/scoring';
 import type {
   DayMenu,
   Dish,
@@ -373,6 +376,45 @@ export const MENU_ENGINE_OPTIONS: GeneratorOptions = {
   ],
 };
 
+// --- KALORİ ---------------------------------------------------------------
+
+export interface CalorieSummary {
+  lunch: number;
+  dinner: number;
+  snack: number;
+  total: number;
+  /** Menüde seçili olup kalori bilgisi girilmemiş yemek sayısı. */
+  missing: number;
+}
+
+/** Günün öğün başına ve toplam kalorisi (yalnızca kalorisi girilmiş yemekler sayılır). */
+export function summarizeCalories(menu: DailyMenu | undefined, itemById: Map<string, FoodItem>): CalorieSummary {
+  const out: CalorieSummary = { lunch: 0, dinner: 0, snack: 0, total: 0, missing: 0 };
+  if (!menu) return out;
+  const add = (id: string | null | undefined, key: 'lunch' | 'dinner' | 'snack') => {
+    if (!id) return;
+    const kcal = itemById.get(id)?.calories;
+    if (kcal) out[key] += kcal;
+    else out.missing += 1;
+  };
+  for (const mealKey of MAIN_MEAL_KEYS) {
+    for (const field of MEAL_COURSE_FIELDS) add(menu[mealKey][field], mealKey);
+  }
+  add(menu.snack, 'snack');
+  out.total = out.lunch + out.dinner + out.snack;
+  return out;
+}
+
+/** Arayüzdeki kural ayarlarını motor seçeneklerine çevirir. */
+export function ruleSettingsToOptions(settings: RuleSettings): GeneratorOptions {
+  return {
+    mainCooldownDays: settings.mainCooldownDays,
+    maxConsecutiveProteinDays: settings.maxConsecutiveProteinDays,
+    weekendSyncCategories: settings.weekendSync ? ['çorba', 'yan_urun', 'tatli_meyve'] : [],
+    requireCompanions: settings.requireCompanions,
+  };
+}
+
 const HISTORY_DAYS = 10;
 
 /** Ayın ilk gününden önceki HISTORY_DAYS günü (boş günlerle tamamlanmış, ardışık) hazırlar. */
@@ -476,31 +518,130 @@ export function generateAutoMonthMenus(
   month: number,
   existingMenus: DailyMenu[] = [],
   options: GeneratorOptions = {},
+  /** Dondurulacak günler (YYYY-MM-DD): kilitli günler ve kapsam dışındaki günler. İçerikleri aynen korunur. */
+  frozenDates: string[] = [],
 ): GeneratedMonth {
   const dishes = foodItemsToDishes(foodItems);
   const dishById = new Map(dishes.map((dish) => [dish.id, dish]));
   const history = buildPreviousDays(existingMenus, year, month, dishById);
+  const frozen = new Set(frozenDates);
+  const byDate = new Map(existingMenus.map((menu) => [menu.date, menu]));
+
+  const fixedDays: DayMenu[] = frozenDates.map((date) => {
+    const existing = byDate.get(date);
+    if (existing) return dailyMenuToDayMenu(existing, dishById);
+    const [y, m, d] = date.split('-').map(Number);
+    return { date, weekday: createLocalDate(y, m - 1, d).getDay(), meals: { ogle: {}, aksam: {} } };
+  });
 
   const result = generateMonthlyMenu(dishes, month + 1, year, {
     ...MENU_ENGINE_OPTIONS,
     previousDays: history.days,
     ...options,
+    fixedDays,
   });
 
-  const snacks = pickSnacks(
+  const freeDays = result.days.filter((day) => !frozen.has(day.date));
+  const snackPicks = pickSnacks(
     foodItems.filter((item) => item.category === 'snacks'),
-    result.days,
+    freeDays,
     history.snackIds,
     result.seed,
   );
-  const menus = result.days.map((day, index) => dayMenuToDailyMenu(day, snacks[index]));
+  const snackByDate = new Map(freeDays.map((day, index) => [day.date, snackPicks[index]]));
 
-  const selectionSequence = menus.flatMap((menu) => [
+  const menus: DailyMenu[] = result.days.flatMap((day) => {
+    if (frozen.has(day.date)) {
+      const existing = byDate.get(day.date);
+      return existing ? [existing] : [];
+    }
+    return [dayMenuToDailyMenu(day, snackByDate.get(day.date) ?? null)];
+  });
+
+  const generatedMenus = menus.filter((menu) => !frozen.has(menu.date));
+  const selectionSequence = generatedMenus.flatMap((menu) => [
     ...MAIN_MEAL_KEYS.flatMap((mealKey) => MEAL_COURSE_FIELDS.map((field) => menu[mealKey][field])),
     menu.snack,
   ]).filter((id): id is string => Boolean(id));
 
   return { menus, selectionSequence, warnings: result.warnings, seed: result.seed };
+}
+
+// --- TEK YEMEK DEĞİŞTİRME / UYGUNLUK -----------------------------------------
+
+export interface CandidateEvaluation {
+  /** Sert kurallara uyan adaylar, en iyiden başlayarak (mevcut seçim hariç). */
+  ranked: string[];
+  /** Kural çiğneyen adayların kimliği → çiğnenen kuralın açıklaması. */
+  violations: Record<string, string>;
+}
+
+/**
+ * Bir günün tek bir yemek yuvası (öğün + kurs) için havuzdaki adayları değerlendirir.
+ * Menü motoruyla aynı sert kuralları kullanır; komşu günler (±10 gün) bağlam olarak alınır.
+ */
+export function evaluateCandidates(
+  foodItems: FoodItem[],
+  menus: DailyMenu[],
+  date: string,
+  mealKey: MainMealKey,
+  field: MealCourseField,
+  options: GeneratorOptions = {},
+  seed = Date.now() % 100000,
+): CandidateEvaluation {
+  const dishes = foodItemsToDishes(foodItems);
+  const dishById = new Map(dishes.map((dish) => [dish.id, dish]));
+  const byDate = new Map(menus.map((menu) => [menu.date, menu]));
+  const center = parseISODate(date);
+  const category = COURSE_TO_DISH_CATEGORY[field];
+  const slot = MEAL_KEY_TO_SLOT[mealKey];
+
+  const timeline: DayMenu[] = [];
+  let dayIndex = 0;
+  for (let delta = -HISTORY_DAYS; delta <= HISTORY_DAYS; delta += 1) {
+    const d = createLocalDate(center.getFullYear(), center.getMonth(), center.getDate() + delta);
+    const dateStr = formatDate(d);
+    const existing = byDate.get(dateStr);
+    const day: DayMenu = existing
+      ? dailyMenuToDayMenu(existing, dishById)
+      : { date: dateStr, weekday: d.getDay(), meals: { ogle: {}, aksam: {} } };
+    if (delta === 0) {
+      day.meals = { ogle: { ...day.meals.ogle }, aksam: { ...day.meals.aksam } };
+      delete day.meals[slot][category]; // değiştirilecek yemeği çıkar
+      dayIndex = timeline.length;
+    }
+    timeline.push(day);
+  }
+
+  const config = resolveConfig({ ...MENU_ENGINE_OPTIONS, ...options, seed });
+  const ctx = { config, timeline, dayIndex, slot, category };
+  const currentId = byDate.get(date)?.[mealKey][field] ?? null;
+
+  const usage = new Map<string, number>();
+  for (const menu of menus) {
+    for (const id of getAllMenuItemIds(menu)) usage.set(id, (usage.get(id) ?? 0) + 1);
+  }
+
+  const violations: Record<string, string> = {};
+  const allowed: Dish[] = [];
+  for (const dish of dishes.filter((d) => d.category === category)) {
+    const rule = findViolation(dish, ctx);
+    if (rule) violations[dish.id] = rule.description;
+    else if (dish.id !== currentId) allowed.push(dish);
+  }
+
+  let state = seed >>> 0;
+  const rng = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+  const ranked = rankCandidates(allowed, ctx, usage, rng).map((dish) => dish.id);
+  return { ranked, violations };
+}
+
+function parseISODate(date: string): Date {
+  const [y, m, d] = date.split('-').map(Number);
+  return createLocalDate(y, m - 1, d);
 }
 
 /** Hazır menüleri (ör. elle düzenlenmiş ay) motorun kurallarıyla denetler; boş dizi = ihlal yok. */

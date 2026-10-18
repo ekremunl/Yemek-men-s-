@@ -2,7 +2,10 @@
 'use client';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { FoodItem, DailyMenu, CategoryKey, ConflictWarning, PlannerMealKey, MealCourseField, FourCourseMeal, MainMealKey } from '@/types';
+import {
+  FoodItem, DailyMenu, CategoryKey, ConflictWarning, PlannerMealKey, MealCourseField, FourCourseMeal, MainMealKey,
+  LinkedRecipe, RuleSettings, DEFAULT_RULE_SETTINGS, PersonCounts, ActiveTab,
+} from '@/types';
 import { SEED_DATA } from '@/lib/seedData';
 import { isTagAllowedForCategory } from '@/lib/tags';
 import { generateId, isSameWeek, MONTH_NAMES_TR, parseDate } from '@/lib/utils';
@@ -12,6 +15,8 @@ import {
   formatMenuGenerationError,
   generateAutoMonthMenus,
   getAllMenuItemIds,
+  evaluateCandidates,
+  ruleSettingsToOptions,
   getEffectiveTags,
   inferTagsFromName,
   MAIN_MEAL_KEYS,
@@ -22,6 +27,18 @@ import {
 interface Toast {
   id: string;
   type: 'warning' | 'error' | 'success' | 'info';
+  title: string;
+  message: string;
+  /** Örn. "Geri al" düğmesi. Eylemli bildirimler daha uzun kalır. */
+  action?: { label: string; run: () => void };
+}
+
+export interface GenerationScope {
+  from: string;
+  to: string;
+}
+
+export interface GenerationError {
   title: string;
   message: string;
 }
@@ -53,13 +70,33 @@ interface AppState {
   bulkUpdateCompanions: (ids: string[], addIds: string[], removeIds: string[], options?: { replace?: boolean }) => number;
   /** Kayıtlı etiketi olmayan yemeklerin isimden tahmin edilen etiketlerini kalıcı yapar. Etkilenen sayıyı döndürür. */
   confirmInferredTags: () => number;
+  /** Porsiyon kalorisi (kcal); null/0 temizler. */
+  setCalories: (id: string, kcal: number | null) => void;
+  /** Mutfaktakip reçetesine bağlar (null = bağı kaldırır). */
+  linkRecipe: (id: string, recipeId: string | null) => void;
+  /** Mutfaktakip reçete kopyaları (kimlik → reçete). */
+  recipes: Record<string, LinkedRecipe>;
+  setRecipes: (recipes: Record<string, LinkedRecipe>) => void;
 
   // Monthly menus
   menus: DailyMenu[];
   setMealCourse: (date: string, mealKey: MainMealKey, field: MealCourseField, itemId: string | null) => void;
   setSnack: (date: string, itemId: string | null) => void;
   clearMenuDay: (date: string, mealKey?: PlannerMealKey) => void;
-  generateBalancedMonthMenus: (year: number, month: number) => void;
+  /** `scope` verilirse yalnızca o tarih aralığı (ör. bir hafta) yeniden üretilir; kilitli günler her zaman korunur. */
+  generateBalancedMonthMenus: (year: number, month: number, scope?: GenerationScope) => void;
+  /** Tek bir yemeği kurallara uygun bir başkasıyla değiştirir. Yeni yemeğin kimliğini döndürür. */
+  replaceCourse: (date: string, mealKey: MainMealKey, field: MealCourseField) => string | null;
+  lockedDates: string[];
+  toggleLockDay: (date: string) => void;
+  generationError: GenerationError | null;
+  clearGenerationError: () => void;
+
+  // Ayarlar
+  ruleSettings: RuleSettings;
+  setRuleSettings: (changes: Partial<RuleSettings>) => void;
+  persons: PersonCounts;
+  setPersons: (changes: Partial<PersonCounts>) => void;
 
   // Current month navigation
   currentYear: number;
@@ -75,8 +112,8 @@ interface AppState {
   removeToast: (id: string) => void;
 
   // Active tab
-  activeTab: 'planner' | 'pool' | 'export';
-  setActiveTab: (tab: 'planner' | 'pool' | 'export') => void;
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
 }
 
 type LegacyDailyMenu = {
@@ -99,7 +136,8 @@ function buildUpdatedMenu(
   date: string,
   mealKey: MainMealKey,
   field: MealCourseField,
-  itemId: string | null
+  itemId: string | null,
+  weekendSync = true
 ): DailyMenu {
   const updatedMenu: DailyMenu = {
     ...menu,
@@ -109,7 +147,7 @@ function buildUpdatedMenu(
     },
   };
 
-  if (mealKey === 'lunch' && WEEKEND_SYNC_FIELDS.includes(field) && isWeekendDate(date)) {
+  if (weekendSync && mealKey === 'lunch' && WEEKEND_SYNC_FIELDS.includes(field) && isWeekendDate(date)) {
     updatedMenu.dinner = {
       ...updatedMenu.dinner,
       [field]: itemId,
@@ -241,6 +279,11 @@ export const useAppStore = create<AppState>()(
       currentMonth: new Date().getMonth(),
       toasts: [],
       activeTab: 'planner',
+      recipes: {},
+      lockedDates: [],
+      generationError: null,
+      ruleSettings: DEFAULT_RULE_SETTINGS,
+      persons: { lunch: 100, dinner: 100 },
 
       addFoodItem: (name, category, extra) => {
         const trimmed = name.trim();
@@ -363,7 +406,73 @@ export const useAppStore = create<AppState>()(
         return confirmed;
       },
 
+      setCalories: (id, kcal) => {
+        const value = kcal && Number.isFinite(kcal) && kcal > 0 ? Math.round(kcal) : undefined;
+        set((state) => ({
+          foodItems: state.foodItems.map((item) => {
+            if (item.id !== id) return item;
+            const { calories: _old, ...rest } = item;
+            void _old;
+            return value ? { ...rest, calories: value } : rest;
+          }),
+        }));
+      },
+
+      linkRecipe: (id, recipeId) => {
+        set((state) => ({
+          foodItems: state.foodItems.map((item) => {
+            if (item.id !== id) return item;
+            const { recipeId: _old, ...rest } = item;
+            void _old;
+            return recipeId ? { ...rest, recipeId } : rest;
+          }),
+        }));
+      },
+
+      setRecipes: (recipes) => set({ recipes }),
+
+      toggleLockDay: (date) =>
+        set((state) => ({
+          lockedDates: state.lockedDates.includes(date)
+            ? state.lockedDates.filter((d) => d !== date)
+            : [...state.lockedDates, date].sort(),
+        })),
+
+      clearGenerationError: () => set({ generationError: null }),
+
+      setRuleSettings: (changes) =>
+        set((state) => ({ ruleSettings: { ...state.ruleSettings, ...changes } })),
+
+      setPersons: (changes) => set((state) => ({ persons: { ...state.persons, ...changes } })),
+
+      replaceCourse: (date, mealKey, field) => {
+        const { foodItems, menus, ruleSettings } = get();
+        const { ranked } = evaluateCandidates(
+          foodItems,
+          menus.map((menu) => normalizeMenu(menu)),
+          date,
+          mealKey,
+          field,
+          ruleSettingsToOptions(ruleSettings)
+        );
+        if (ranked.length === 0) {
+          get().addToast({
+            type: 'warning',
+            title: 'Uygun alternatif yok',
+            message: 'Bu yuva için kurallara uyan başka bir yemek bulunamadı. Havuza yemek ekleyin veya kuralları gevşetin.',
+          });
+          return null;
+        }
+        // En iyi 3 aday arasından seç: art arda basınca farklı öneriler gelsin.
+        const pick = ranked[Math.floor(Math.random() * Math.min(3, ranked.length))];
+        get().setMealCourse(date, mealKey, field, pick);
+        return pick;
+      },
+
       removeFoodItem: (id) => {
+        const before = { foodItems: get().foodItems, menus: get().menus.map((m) => normalizeMenu(m)) };
+        const target = before.foodItems.find((f) => f.id === id);
+        const targetIndex = before.foodItems.findIndex((f) => f.id === id);
         // Also clear from menus
         set((state) => ({
           // Silinen yemeği öneri listelerinden de çıkar (boşta kalan kimlik kalmasın).
@@ -396,6 +505,50 @@ export const useAppStore = create<AppState>()(
             };
           }),
         }));
+
+        if (!target) return;
+        get().addToast({
+          type: 'info',
+          title: 'Silindi',
+          message: `"${target.name}" havuzdan ve menülerden kaldırıldı.`,
+          action: {
+            label: 'Geri al',
+            run: () => {
+              set((state) => {
+                if (state.foodItems.some((f) => f.id === id)) return {};
+                const restored = [...state.foodItems];
+                restored.splice(Math.min(targetIndex, restored.length), 0, target);
+                const withCompanions = restored.map((f) => {
+                  const was = before.foodItems.find((b) => b.id === f.id);
+                  return was?.suggestedCompanions?.includes(id) && !f.suggestedCompanions?.includes(id)
+                    ? { ...f, suggestedCompanions: [...(f.suggestedCompanions ?? []), id] }
+                    : f;
+                });
+                const byDate = new Map(state.menus.map((m) => [m.date, normalizeMenu(m)]));
+                for (const old of before.menus) {
+                  if (!getAllMenuItemIds(old).includes(id)) continue;
+                  const current = byDate.get(old.date) ?? createEmptyDailyMenu(old.date);
+                  const next: DailyMenu = {
+                    ...current,
+                    lunch: { ...current.lunch },
+                    dinner: { ...current.dinner },
+                  };
+                  for (const mealKey of MAIN_MEAL_KEYS) {
+                    for (const field of MEAL_COURSE_FIELDS) {
+                      if (old[mealKey][field] === id && !next[mealKey][field]) next[mealKey][field] = id;
+                    }
+                  }
+                  if (old.snack === id && !next.snack) next.snack = id;
+                  byDate.set(old.date, next);
+                }
+                return {
+                  foodItems: withCompanions,
+                  menus: Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date)),
+                };
+              });
+            },
+          },
+        });
       },
 
       setMealCourse: (date, mealKey, field, itemId) => {
@@ -408,12 +561,12 @@ export const useAppStore = create<AppState>()(
               foodItems: nextFoodItems,
               menus: state.menus.map((m) =>
                 m.date === date
-                  ? buildUpdatedMenu(normalizeMenu(m), date, mealKey, field, itemId)
+                  ? buildUpdatedMenu(normalizeMenu(m), date, mealKey, field, itemId, get().ruleSettings.weekendSync)
                   : normalizeMenu(m)
               ),
             };
           }
-          const newMenu = buildUpdatedMenu(createEmptyDailyMenu(date), date, mealKey, field, itemId);
+          const newMenu = buildUpdatedMenu(createEmptyDailyMenu(date), date, mealKey, field, itemId, get().ruleSettings.weekendSync);
           return {
             foodItems: nextFoodItems,
             menus: [...state.menus, newMenu],
@@ -490,8 +643,8 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
-      generateBalancedMonthMenus: (year, month) => {
-        const { foodItems, menus } = get();
+      generateBalancedMonthMenus: (year, month, scope) => {
+        const { foodItems, menus, lockedDates, ruleSettings } = get();
         const pools = createCategoryPools(foodItems);
         const missingCategory = CATEGORY_KEYS.find((category) => pools[category].length === 0);
 
@@ -503,14 +656,25 @@ export const useAppStore = create<AppState>()(
             complements: 'Tamamlayıcılar',
             snacks: 'Ara Öğünler',
           };
-
-          get().addToast({
-            type: 'error',
+          const error = {
             title: 'Eksik Ürün Havuzu',
             message: `"${missingLabels[missingCategory]}" kategorisinde ürün olmadığı için otomatik menü oluşturulamadı.`,
-          });
+          };
+          set({ generationError: error });
+          get().addToast({ type: 'error', ...error });
           return;
         }
+
+        const normalized = menus.map((menu) => normalizeMenu(menu));
+        const daysInThisMonth = new Date(year, month + 1, 0).getDate();
+        const monthDates = Array.from({ length: daysInThisMonth }, (_, i) => {
+          const d = new Date(year, month, i + 1, 12);
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        });
+        // Dondurulacak günler: kilitli günler + (kapsam verildiyse) kapsam dışındaki günler.
+        const frozenDates = monthDates.filter(
+          (date) => lockedDates.includes(date) || (scope ? date < scope.from || date > scope.to : false)
+        );
 
         let generated: GeneratedMonth;
         try {
@@ -518,15 +682,15 @@ export const useAppStore = create<AppState>()(
             foodItems,
             year,
             month,
-            menus.map((menu) => normalizeMenu(menu))
+            normalized,
+            ruleSettingsToOptions(ruleSettings),
+            frozenDates
           );
         } catch (error) {
           console.error('Otomatik menü oluşturulamadı:', error);
-          get().addToast({
-            type: 'error',
-            title: 'Menü Oluşturulamadı',
-            message: formatMenuGenerationError(error),
-          });
+          const failure = { title: 'Menü Oluşturulamadı', message: formatMenuGenerationError(error) };
+          set({ generationError: failure });
+          get().addToast({ type: 'error', ...failure });
           return;
         }
 
@@ -534,24 +698,26 @@ export const useAppStore = create<AppState>()(
           foodItems,
           generated.selectionSequence
         );
-        const preservedMenus = menus
-          .map((menu) => normalizeMenu(menu))
-          .filter((menu) => {
-            const menuDate = parseDate(menu.date);
-            return !(menuDate.getFullYear() === year && menuDate.getMonth() === month);
-          });
+        const preservedMenus = normalized.filter((menu) => {
+          const menuDate = parseDate(menu.date);
+          return !(menuDate.getFullYear() === year && menuDate.getMonth() === month);
+        });
 
         set({
           foodItems: rotatedFoodItems,
+          generationError: null,
           menus: [...preservedMenus, ...generated.menus].sort((left, right) =>
             left.date.localeCompare(right.date)
           ),
         });
 
+        const lockedInMonth = frozenDates.filter((d) => lockedDates.includes(d)).length;
         get().addToast({
           type: 'success',
-          title: 'Aylık Menü Oluşturuldu',
-          message: `${MONTH_NAMES_TR[month]} ${year} için dengeli ve çeşitli aylık menü hazırlandı.`,
+          title: scope ? 'Seçili Aralık Yenilendi' : 'Aylık Menü Oluşturuldu',
+          message: scope
+            ? `${scope.from} – ${scope.to} aralığı yeniden oluşturuldu${lockedInMonth ? `; ${lockedInMonth} kilitli gün korundu` : ''}.`
+            : `${MONTH_NAMES_TR[month]} ${year} için dengeli ve çeşitli aylık menü hazırlandı${lockedInMonth ? `; ${lockedInMonth} kilitli gün korundu` : ''}.`,
         });
 
         if (generated.warnings.length > 0) {
@@ -624,7 +790,7 @@ export const useAppStore = create<AppState>()(
         set((state) => ({ toasts: [...state.toasts, { ...toast, id }] }));
         setTimeout(() => {
           get().removeToast(id);
-        }, 5000);
+        }, toast.action ? 9000 : 5000);
       },
 
       removeToast: (id) => {
@@ -635,7 +801,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'cafeteria-menu-store',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => (typeof window !== 'undefined' ? localStorage : { getItem: () => null, setItem: () => {}, removeItem: () => {} })),
       migrate: (persistedState: unknown) => {
         if (!persistedState || typeof persistedState !== 'object') return persistedState;
@@ -658,6 +824,10 @@ export const useAppStore = create<AppState>()(
         menus: state.menus,
         currentYear: state.currentYear,
         currentMonth: state.currentMonth,
+        recipes: state.recipes,
+        lockedDates: state.lockedDates,
+        ruleSettings: state.ruleSettings,
+        persons: state.persons,
       }),
     }
   )

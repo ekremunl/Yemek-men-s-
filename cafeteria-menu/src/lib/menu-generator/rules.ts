@@ -72,6 +72,10 @@ export const otherMealDishes = (ctx: RuleContext): Dish[] =>
 export const previousDays = (ctx: RuleContext, n: number): DayMenu[] =>
   ctx.timeline.slice(Math.max(0, ctx.dayIndex - n), ctx.dayIndex);
 
+/** Bugünden sonraki n gün (sabit/kilitli günler için ileriye dönük kontrol). */
+export const nextDays = (ctx: RuleContext, n: number): DayMenu[] =>
+  ctx.timeline.slice(ctx.dayIndex + 1, ctx.dayIndex + 1 + n);
+
 export const dayDishes = (day: DayMenu): Dish[] =>
   MEAL_SLOTS.flatMap((s) => mealDishes(day.meals[s]));
 
@@ -101,7 +105,7 @@ export const RULES: readonly Rule[] = [
   // 1) AYNI ÖĞÜN İÇİ ---------------------------------------------------------
   {
     id: 'INTRA_INCOMPATIBLE_TAGS',
-    description: 'Yemeğin incompatibleWithTags listesindeki bir etiketi taşıyan yemekle aynı öğünde olamaz (iki yönlü).',
+    description: 'Aynı öğündeki başka bir yemekle uyumsuz (ör. hamur işi ana yemekle pilav/makarna, ya da uyumsuz etiketli yemekler).',
     allows(dish, ctx) {
       return mealDishes(currentMeal(ctx)).every(
         (other) =>
@@ -233,7 +237,8 @@ export const RULES: readonly Rule[] = [
     description: 'Aynı ana yemek, kullanıldıktan sonra mainCooldownDays gün boyunca (ve aynı gün içinde) tekrar edemez.',
     allows(dish, ctx) {
       if (dish.category !== 'ana_yemek') return true;
-      const window = [...previousDays(ctx, ctx.config.mainCooldownDays), currentDay(ctx)];
+      const n = ctx.config.mainCooldownDays;
+      const window = [...previousDays(ctx, n), currentDay(ctx), ...nextDays(ctx, n)];
       return !window.some((day) => MEAL_SLOTS.some((s) => day.meals[s].ana_yemek?.id === dish.id));
     },
   },
@@ -242,9 +247,19 @@ export const RULES: readonly Rule[] = [
     description: 'Aynı protein türü en fazla maxConsecutiveProteinDays gün üst üste seçilebilir.',
     allows(dish, ctx) {
       const { proteinTags, maxConsecutiveProteinDays: max } = ctx.config;
-      const prev = previousDays(ctx, max);
-      if (prev.length < max) return true;
-      return !dish.tags.some((t) => proteinTags.includes(t) && prev.every((day) => dayHasTag(day, t)));
+      // (max + 1) günlük her pencerede, bugün dahil hepsi aynı proteini taşıyorsa ihlaldir.
+      // Normal üretimde gelecek günler boştur; yalnızca kilitli günler ileriye dönük etki eder.
+      return !dish.tags.some((t) => {
+        if (!proteinTags.includes(t)) return false;
+        for (let before = 0; before <= max; before++) {
+          const start = ctx.dayIndex - before;
+          const end = start + max; // dahil
+          if (start < 0 || end >= ctx.timeline.length) continue;
+          const others = ctx.timeline.slice(start, end + 1).filter((_, k) => start + k !== ctx.dayIndex);
+          if (others.every((day) => dayHasTag(day, t))) return true;
+        }
+        return false;
+      });
     },
   },
 ];

@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { DatabaseBackup, Download, Upload, Share2 } from 'lucide-react';
 import { useAppStore } from '@/context/store';
-import { DailyMenu, FoodItem } from '@/types';
+import { DailyMenu, FoodItem, LinkedRecipe, PersonCounts, RuleSettings } from '@/types';
 
 const BACKUP_APP = 'yemekhane-menu-planlayici';
 const BACKUP_FORMAT = 1;
@@ -17,6 +17,11 @@ interface BackupFile {
     menus: DailyMenu[];
     currentYear: number;
     currentMonth: number;
+    // Sonradan eklenen alanlar (eski yedeklerde yok).
+    recipes?: Record<string, LinkedRecipe>;
+    lockedDates?: string[];
+    ruleSettings?: RuleSettings;
+    persons?: PersonCounts;
   };
 }
 
@@ -55,12 +60,12 @@ export default function BackupPanel() {
     typeof File !== 'undefined';
 
   const createBackupFile = (): File => {
-    const { foodItems, menus, currentYear, currentMonth } = useAppStore.getState();
+    const { foodItems, menus, currentYear, currentMonth, recipes, lockedDates, ruleSettings, persons } = useAppStore.getState();
     const backup: BackupFile = {
       app: BACKUP_APP,
       format: BACKUP_FORMAT,
       exportedAt: new Date().toISOString(),
-      data: { foodItems, menus, currentYear, currentMonth },
+      data: { foodItems, menus, currentYear, currentMonth, recipes, lockedDates, ruleSettings, persons },
     };
     return new File([JSON.stringify(backup, null, 2)], buildFileName(), { type: 'application/json' });
   };
@@ -119,6 +124,10 @@ export default function BackupPanel() {
         menus: incoming.menus,
         currentYear: incoming.currentYear,
         currentMonth: incoming.currentMonth,
+        ...(incoming.recipes ? { recipes: incoming.recipes } : {}),
+        ...(incoming.lockedDates ? { lockedDates: incoming.lockedDates } : {}),
+        ...(incoming.ruleSettings ? { ruleSettings: incoming.ruleSettings } : {}),
+        ...(incoming.persons ? { persons: incoming.persons } : {}),
       });
     } else {
       // Birleştir: yemek havuzu kimliğe göre birleşir, aynı tarihte yedektekiler öncelikli olur.
@@ -129,6 +138,8 @@ export default function BackupPanel() {
       useAppStore.setState({
         foodItems: mergedItems,
         menus: Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date)),
+        recipes: { ...current.recipes, ...(incoming.recipes ?? {}) },
+        lockedDates: Array.from(new Set([...current.lockedDates, ...(incoming.lockedDates ?? [])])).sort(),
       });
     }
 
@@ -154,14 +165,14 @@ export default function BackupPanel() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button
           onClick={handleDownload}
-          className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
+          className="flex items-center justify-center gap-2 min-h-[3rem] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors"
         >
           <Download className="w-5 h-5" />
           Yedeği İndir
         </button>
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-600 hover:bg-slate-500 text-white font-semibold transition-colors"
+          className="flex items-center justify-center gap-2 min-h-[3rem] px-4 rounded-xl bg-slate-600 hover:bg-slate-500 text-white font-semibold transition-colors"
         >
           <Upload className="w-5 h-5" />
           Yedeği Yükle

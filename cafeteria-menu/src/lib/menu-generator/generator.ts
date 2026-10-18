@@ -250,7 +250,11 @@ export function generateMonthlyMenu(
   const { template, warnings } = preflight(config, byCategory);
 
   const dayCount = daysInMonth(year, month);
-  const decisions = buildDecisions(year, month, dayCount, template, config);
+  // Sabit günler dondurulur: o günler için karar üretilmez, içerikleri olduğu gibi kalır.
+  const frozenDates = new Set(config.fixedDays.map((d) => d.date));
+  const decisions = buildDecisions(year, month, dayCount, template, config).filter(
+    (d) => !frozenDates.has(`${year}-${pad(month)}-${pad(d.dayOffset + 1)}`),
+  );
   const offset = config.previousDays.length;
 
   let deepest: { index: number; diagnostics: FailureDiagnostics } | undefined;
@@ -260,8 +264,27 @@ export function generateMonthlyMenu(
       ...config.previousDays.map(cloneDay),
       ...Array.from({ length: dayCount }, (_, i) => createDay(year, month, i + 1)),
     ];
+    // Sabit günler: dolu öğünler olduğu gibi yerleştirilir, çözücü bunlara dokunmaz.
+    const prefilled = new Set<string>();
+    for (const fixed of config.fixedDays) {
+      const idx = timeline.findIndex((d, n) => n >= offset && d.date === fixed.date);
+      if (idx < 0) continue;
+      for (const slot of MEAL_SLOTS) {
+        for (const category of CATEGORY_ORDER) {
+          const dish = fixed.meals[slot][category];
+          if (!dish) continue;
+          timeline[idx].meals[slot][category] = dish;
+          prefilled.add(`${idx - offset}|${slot}|${category}`);
+        }
+      }
+    }
     const rng = mulberry32(config.seed + attempt * 104_729);
     const usage = new Map<string, number>();
+    prefilled.forEach((key) => {
+      const [dayOffset, slot, category] = key.split('|');
+      const dish = timeline[offset + Number(dayOffset)].meals[slot as MealSlot][category as DishCategory];
+      if (dish) usage.set(dish.id, (usage.get(dish.id) ?? 0) + 1);
+    });
     let backtracks = 0;
     let aborted = false;
 

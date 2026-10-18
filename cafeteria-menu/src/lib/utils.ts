@@ -115,3 +115,24 @@ export function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+/** YYYY-MM-DD tarihine gün ekler/çıkarır. */
+export function addDays(dateStr: string, delta: number): string {
+  const d = parseDate(dateStr);
+  return formatDate(createLocalDate(d.getFullYear(), d.getMonth(), d.getDate() + delta));
+}
+
+/** Verilen tarihin haftası (Pazartesi–Pazar). */
+export function getWeekRange(dateStr: string): { from: string; to: string } {
+  const d = parseDate(dateStr);
+  const offset = (d.getDay() + 6) % 7; // Pazartesi = 0
+  const from = addDays(dateStr, -offset);
+  return { from, to: addDays(from, 6) };
+}
+
+/** [from, to] aralığındaki tüm tarihler (dahil). */
+export function eachDate(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let cursor = from; cursor <= to && out.length < 400; cursor = addDays(cursor, 1)) out.push(cursor);
+  return out;
+}

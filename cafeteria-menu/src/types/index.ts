@@ -20,6 +20,50 @@ export interface FoodItem {
    * Otomatik menü, her kategoride bu listeden birini tercih eder (kurallara aykırı değilse).
    */
   suggestedCompanions?: string[];
+  /** Porsiyon başına kalori (kcal). Elle girilir. */
+  calories?: number;
+  /** Mutfaktakip reçete kimliği (varsa malzeme listesi bu reçeteden hesaplanır). */
+  recipeId?: string;
+}
+
+/** Mutfaktakip reçetesindeki bir malzeme (miktar KİŞİ BAŞI). */
+export interface RecipeIngredient {
+  name: string;
+  amt: number;
+  unit: string;
+}
+
+/** Mutfaktakip'ten alınan reçetenin yerel kopyası. */
+export interface LinkedRecipe {
+  id: string;
+  name: string;
+  cat?: string;
+  ings: RecipeIngredient[];
+}
+
+/** Menü üretici kural ayarları (arayüzden değiştirilebilir). */
+export interface RuleSettings {
+  /** Aynı ana yemek kaç gün tekrar edemez. */
+  mainCooldownDays: number;
+  /** Aynı protein en fazla kaç gün üst üste. */
+  maxConsecutiveProteinDays: number;
+  /** Hafta sonu akşam çorba/yan/tamamlayıcı öğleyle aynı olsun. */
+  weekendSync: boolean;
+  /** Ana yemeğin eşlikçi listesi zorunlu olsun. */
+  requireCompanions: boolean;
+}
+
+export const DEFAULT_RULE_SETTINGS: RuleSettings = {
+  mainCooldownDays: 5,
+  maxConsecutiveProteinDays: 2,
+  weekendSync: true,
+  requireCompanions: true,
+};
+
+/** Malzeme / üretim listesi için kişi sayıları. */
+export interface PersonCounts {
+  lunch: number;
+  dinner: number;
 }
 
 export interface FourCourseMeal {
@@ -58,4 +102,4 @@ export interface CategoryMeta {
 }
 
 export type ViewMode = 'calendar' | 'list';
-export type ActiveTab = 'planner' | 'pool' | 'export';
+export type ActiveTab = 'planner' | 'pool' | 'ingredients' | 'export' | 'settings';

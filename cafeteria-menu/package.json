@@ -6,27 +6,32 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "tsx src/lib/menu-generator/menu-generator.test.ts && tsx src/lib/menu-generator/fixed-days.test.ts && tsx src/lib/menu-bridge.test.ts && tsx src/lib/mutfak-shopping.test.ts && tsx src/context/store.integration.test.ts && tsx src/context/store.tags.test.ts"
   },
   "dependencies": {
+    "clsx": "^2.1.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
+    "lucide-react": "^0.378.0",
     "next": "14.2.3",
     "react": "^18",
     "react-dom": "^18",
-    "lucide-react": "^0.378.0",
+    "tailwind-merge": "^2.3.0",
     "xlsx": "^0.18.5",
-    "zustand": "^4.5.2",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^2.3.0"
+    "zustand": "^4.5.2"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
+    "dejavu-fonts-ttf": "^2.37.3",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.3",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5",
-    "eslint": "^8",
-    "eslint-config-next": "14.2.3"
+    "tsx": "^4.23.15",
+    "typescript": "^5"
   }
 }

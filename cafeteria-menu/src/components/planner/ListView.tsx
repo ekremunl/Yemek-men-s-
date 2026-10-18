@@ -7,6 +7,7 @@ import { MainMealKey, PlannerMealKey } from '@/types';
 import { cn, getDaysInMonth, getMonthDayEntries, getTodayDateKey, MONTH_NAMES_TR } from '@/lib/utils';
 import { MAIN_MEAL_KEYS, MEAL_LABELS_TR, PLANNER_MEAL_KEYS } from '@/lib/menu';
 import DayEditor from './DayEditor';
+import DayCard from './DayCard';
 
 const CELL_STYLES: Record<PlannerMealKey, string> = {
   lunch: 'border-amber-500/20 bg-amber-500/10',
@@ -64,17 +65,24 @@ export default function ListView() {
     <div className="space-y-4">
       {/* Nav */}
       <div className="flex items-center justify-between">
-        <button onClick={prevMonth} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors">
+        <button onClick={prevMonth} className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/15 text-white/60 hover:text-white transition-colors">
           <ChevronLeft className="w-5 h-5" />
         </button>
         <h2 className="text-xl font-bold text-white">{MONTH_NAMES_TR[currentMonth]} {currentYear}</h2>
-        <button onClick={nextMonth} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors">
+        <button onClick={nextMonth} className="w-11 h-11 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 active:bg-white/15 text-white/60 hover:text-white transition-colors">
           <ChevronRight className="w-5 h-5" />
         </button>
       </div>
 
-      {/* Table header */}
-      <div className="overflow-x-auto rounded-2xl border border-white/10">
+      {/* Mobil: açılır günlük kartlar */}
+      <div className="md:hidden space-y-2.5">
+        {days.map(({ dateStr }) => (
+          <DayCard key={dateStr} dateStr={dateStr} onOpen={setSelectedDate} expandable />
+        ))}
+      </div>
+
+      {/* Masaüstü: tablo */}
+      <div className="hidden md:block overflow-x-auto rounded-2xl border border-white/10">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/10 bg-white/5">

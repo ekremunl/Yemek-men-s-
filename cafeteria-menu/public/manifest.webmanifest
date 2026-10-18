@@ -1,0 +1,17 @@
+{
+  "name": "Yemekhane Menü Planlayıcı",
+  "short_name": "Menü",
+  "description": "Aylık yemekhane menüsü planlama, malzeme listesi ve Mutfaktakip bağlantısı",
+  "lang": "tr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#020817",
+  "theme_color": "#0f172a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
