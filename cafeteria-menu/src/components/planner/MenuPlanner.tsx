@@ -1,16 +1,19 @@
 // src/components/planner/MenuPlanner.tsx
 'use client';
 import { useState } from 'react';
-import { AlertTriangle, LayoutGrid, List, Lock, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, Download, LayoutGrid, List, Lock, Sparkles, X } from 'lucide-react';
 import { useAppStore } from '@/context/store';
 import CalendarView from './CalendarView';
 import ListView from './ListView';
+import ExportPanel from '@/components/export/ExportPanel';
+import BottomSheet from '@/components/ui/BottomSheet';
 import { cn, getMonthMenus, MONTH_NAMES_TR } from '@/lib/utils';
 
 type ViewMode = 'calendar' | 'list';
 
 export default function MenuPlanner() {
   const [view, setView] = useState<ViewMode>('calendar');
+  const [exportOpen, setExportOpen] = useState(false);
   const {
     currentYear, currentMonth, menus, generateBalancedMonthMenus, generationError, clearGenerationError,
     lockedDates, setActiveTab,
@@ -64,6 +67,15 @@ export default function MenuPlanner() {
           >
             <Sparkles className="w-4 h-4 shrink-0" />
             <span className="truncate">{MONTH_NAMES_TR[currentMonth]} Menüsünü Oluştur</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            aria-label="Dışa aktar"
+            title="PDF / Excel"
+            className="w-12 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 text-white/70 active:bg-white/15"
+          >
+            <Download className="w-4 h-4" />
           </button>
           <div className="flex items-center bg-white/5 rounded-xl p-1 border border-white/10">
             {(
@@ -137,6 +149,10 @@ export default function MenuPlanner() {
       )}
 
       {view === 'calendar' ? <CalendarView /> : <ListView />}
+
+      <BottomSheet open={exportOpen} onClose={() => setExportOpen(false)} full maxWidthClass="md:max-w-3xl">
+        <ExportPanel />
+      </BottomSheet>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 // src/lib/mutfak.ts
 //
-// Mutfaktakip (https://github.com/ekremunl/Mutfaktakip) ile bağlantı.
+// Eski Mutfaktakip (https://github.com/ekremunl/Mutfaktakip) ve sipariş uygulamasından veri alma.
 //
 // Mutfaktakip tek dosyalı bir uygulamadır ve verisini tarayıcının localStorage'ında şu anahtarlarla tutar:
 //   kt_recipes : [{ id, name, cat, ings: [{ name, amt, unit }] }]   (amt = KİŞİ BAŞI miktar)
@@ -9,8 +9,7 @@
 //
 // İki uygulama AYNI alan adında yayınlanıyorsa (ör. kullanici.github.io) localStorage ortaktır ve doğrudan okunur/yazılır.
 // Aksi halde yedek (.json) dosyası üzerinden taşınır.
-import type { DailyMenu, FoodItem, LinkedRecipe, PersonCounts } from '@/types';
-import { MAIN_MEAL_KEYS, MEAL_COURSE_FIELDS } from '@/lib/menu';
+import type { FoodItem, LinkedRecipe } from '@/types';
 
 export const MUTFAK_RECIPES_KEY = 'kt_recipes';
 export const MUTFAK_DAYS_KEY = 'kt_days';
@@ -143,104 +142,23 @@ export function matchRecipes(items: FoodItem[], recipes: LinkedRecipe[]): Recipe
 }
 
 // ---------------------------------------------------------------------------
-// Menüyü Mutfaktakip günlerine aktarma
+// Eski sipariş uygulaması (Order Manager): ürün havuzu `om_pool` anahtarında
 // ---------------------------------------------------------------------------
 
-export interface MenuToMutfakResult {
-  days: Record<string, MutfakDay>;
-  /** Yazılan (yeni veya güncellenen) gün sayısı. */
-  touchedDays: number;
-  /** Mutfaktakip'te raporu kesinleşmiş olduğu için dokunulmayan öğün sayısı. */
-  skippedMeals: number;
-  /** Menüde olup reçetesi bağlı olmadığı için aktarılamayan yemek adları. */
-  unlinked: string[];
+export const ORDER_POOL_KEY = 'om_pool';
+
+/** Aynı alan adında çalışan eski sipariş uygulamasının ürün adlarını okur; yoksa null. */
+export function readLiveOrderPool(): string[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = parseStored<unknown[]>(window.localStorage.getItem(ORDER_POOL_KEY));
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) : null;
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Seçilen aralıktaki menüleri Mutfaktakip günlerine yazar (birleştirir, silmez):
- *  - Öğle yemeği → `meals.ogle`, akşam → `meals.aksam`, ara öğün → `meals.ara`
- *  - Gün zaten varsa kişi sayıları ve diğer alanlar korunur; yoksa `persons` ile oluşturulur.
- *  - O öğün için Mutfaktakip'te kaydedilmiş (düzenlenmiş) bir rapor varsa o öğüne dokunulmaz.
- */
-export function mergeMenusIntoMutfak(
-  existing: Record<string, MutfakDay>,
-  menus: DailyMenu[],
-  items: FoodItem[],
-  recipeIds: Set<string>,
-  persons: PersonCounts,
-  from: string,
-  to: string
-): MenuToMutfakResult {
-  const days: Record<string, MutfakDay> = JSON.parse(JSON.stringify(existing));
-  const itemById = new Map(items.map((i) => [i.id, i]));
-  const unlinked = new Set<string>();
-  let touchedDays = 0;
-  let skippedMeals = 0;
-
-  const idsFor = (ids: (string | null)[]): string[] => {
-    const out: string[] = [];
-    ids.forEach((id) => {
-      if (!id) return;
-      const item = itemById.get(id);
-      if (!item) return;
-      if (item.recipeId && recipeIds.has(item.recipeId)) {
-        if (!out.includes(item.recipeId)) out.push(item.recipeId);
-      } else {
-        unlinked.add(item.name);
-      }
-    });
-    return out;
-  };
-
-  menus
-    .filter((menu) => menu.date >= from && menu.date <= to)
-    .forEach((menu) => {
-      const planned: Record<'ogle' | 'aksam' | 'ara', string[]> = {
-        ogle: idsFor(MEAL_COURSE_FIELDS.map((f) => menu.lunch[f])),
-        aksam: idsFor(MEAL_COURSE_FIELDS.map((f) => menu.dinner[f])),
-        ara: idsFor([menu.snack]),
-      };
-      if (planned.ogle.length + planned.aksam.length + planned.ara.length === 0) return;
-
-      const day: MutfakDay = days[menu.date] ?? {
-        lunch: persons.lunch,
-        dinner: persons.dinner,
-        basis: { kahvalti: 'lunch', ogle: 'lunch', aksam: 'dinner', ara: 'lunch' },
-        meals: { kahvalti: [], ogle: [], aksam: [], ara: [] },
-        firin: [],
-        direkt: [],
-        report: {},
-      };
-      day.meals = day.meals ?? { kahvalti: [], ogle: [], aksam: [], ara: [] };
-      day.report = day.report ?? {};
-
-      let changed = false;
-      (['ogle', 'aksam', 'ara'] as const).forEach((key) => {
-        if (planned[key].length === 0) return;
-        if (day.report && day.report[key]) {
-          skippedMeals += 1; // kesinleşmiş rapor korunur
-          return;
-        }
-        day.meals![key] = planned[key];
-        changed = true;
-      });
-      if (changed) {
-        days[menu.date] = day;
-        touchedDays += 1;
-      }
-    });
-
-  // MAIN_MEAL_KEYS yalnızca tip bütünlüğü için kullanılıyor (derleyici uyarısı çıkmasın).
-  void MAIN_MEAL_KEYS;
-  return { days, touchedDays, skippedMeals, unlinked: Array.from(unlinked).sort((a, b) => a.localeCompare(b, 'tr')) };
-}
-
-/** Aynı tarayıcıdaki Mutfaktakip'e doğrudan yazar. */
-export function writeLiveMutfakDays(days: Record<string, MutfakDay>): void {
-  window.localStorage.setItem(MUTFAK_DAYS_KEY, JSON.stringify(days));
-}
-
-/** Mutfaktakip "Yedek Yükle" ile geri yüklenebilecek yedek dosyasının içeriği. */
-export function buildMutfakBackup(recipes: LinkedRecipe[], days: Record<string, MutfakDay>): string {
-  return JSON.stringify({ app: MUTFAK_APP_ID, version: 1, exportedAt: new Date().toISOString(), recipes, days }, null, 2);
+/** Satır sonu / virgül / noktalı virgülle ayrılmış ürün adlarını ayrıştırır. */
+export function parseNameList(text: string): string[] {
+  return Array.from(new Set(text.split(/[\n,;]+/).map((n) => n.trim()).filter(Boolean)));
 }

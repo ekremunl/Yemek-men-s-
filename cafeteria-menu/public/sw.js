@@ -2,7 +2,7 @@
  *  - Sayfa (navigation): önce ağ, olmazsa önbellek.
  *  - Diğer aynı-kökenli GET istekleri (JS, CSS, ikon, yazı tipi): önbellekten ver, arkada yenile.
  *  Sürümü değiştirmek eski önbelleği temizler. */
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = 'yemek-menu-' + VERSION;
 const SCOPE = self.registration.scope; // örn. https://kullanici.github.io/Yemek-men-s-/
 

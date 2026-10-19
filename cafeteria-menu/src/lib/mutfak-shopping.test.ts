@@ -1,7 +1,9 @@
 // Çalıştırma:  npx tsx src/lib/mutfak-shopping.test.ts
 import assert from 'node:assert/strict';
 import { computeIngredients } from './shopping';
-import { matchRecipes, mergeMenusIntoMutfak, normalizeName, parseMutfakBackup } from './mutfak';
+import { matchRecipes, normalizeName, parseMutfakBackup, parseNameList } from './mutfak';
+import { autoLines, cardLines, emptyKitchenDay, normalizeKitchenDay, recipesForMeal } from './kitchen';
+import { ingredientToOrderItem, orderToText } from './order';
 import { evaluateCandidates, createEmptyDailyMenu } from './menu';
 import { SEED_DATA } from './seedData';
 import type { FoodItem, LinkedRecipe } from '@/types';
@@ -36,15 +38,34 @@ const m = matchRecipes(items.slice(0, 1), Object.values(recipes))[0];
 assert.equal(m.exact, undefined);
 assert.equal(m.suggestions[0].id, 'r1', 'benzer ad önerilir');
 
-// Mutfaktakip'e aktarma: bağlı olmayan atlanır, kesinleşmiş rapor korunur
-const existing = { '2026-11-02': { lunch: 7, dinner: 8, meals: { ogle: ['x'], aksam: [], ara: [], kahvalti: [] }, report: { aksam: [{ name: 'Z' }] } } };
-const res = mergeMenusIntoMutfak(existing, [day], items, new Set(['r1', 'r2']), { lunch: 100, dinner: 100 }, '2026-11-01', '2026-11-30');
-const out = res.days['2026-11-02'];
-assert.deepEqual(out.meals!.ogle, ['r1', 'r2']);
-assert.equal(out.lunch, 7, 'mevcut kişi sayısı korunur');
-assert.deepEqual(out.meals!.aksam, [], 'kesinleşmiş akşam raporuna dokunulmaz');
-assert.equal(res.skippedMeals, 1);
-assert.deepEqual(res.unlinked, ['Sütlaç']);
+// Mutfak günlük rapor: menü (bağlı reçeteler) + elle eklenen reçete + doğrudan tüketim, öğüne göre kişi sayısı
+const itemMap = new Map(items.map((i) => [i.id, i]));
+const kd = emptyKitchenDay({ lunch: 100, dinner: 50 });
+kd.meals.ogle = ['r2']; // elle eklenen (menüde zaten var → tekrarlanmaz)
+kd.meals.kahvalti = ['r2'];
+kd.direkt.push({ name: 'Süt', amt: 2000, unit: 'ml', meal: 'ogle' });
+const ogle = autoLines(kd, 'ogle', day, itemMap, recipes);
+assert.equal(ogle.find((l) => l.name === 'Makarna')!.qty, 8, 'makarna 80g × 100 = 8 kg (tekrar yok)');
+assert.equal(ogle.find((l) => l.name === 'Süt')!.qty, 2);
+assert.equal(ogle.find((l) => l.name === 'Süt')!.unit, 'L');
+assert.deepEqual(recipesForMeal(kd, 'ogle', day, itemMap, recipes).unlinked, ['Sütlaç']);
+const aksam = autoLines(kd, 'aksam', day, itemMap, recipes); // akşam: 50 kişi
+assert.equal(aksam.find((l) => l.name === 'Mercimek')!.qty, 2);
+const kahvalti = autoLines(kd, 'kahvalti', day, itemMap, recipes);
+assert.equal(kahvalti.length, 2, 'kahvaltıda yalnızca elle eklenen r2 var');
+// Elle düzenlenmiş rapor otomatik hesabın yerini alır
+kd.report.ogle = [{ name: 'X', qty: 1, unit: 'kg' }];
+assert.equal(cardLines(kd, 'ogle', day, itemMap, recipes)[0].name, 'X');
+// Eski Mutfaktakip günü (eksik alanlarla) güvenle normalize edilir
+const old = normalizeKitchenDay({ lunch: 10, meals: { ogle: ['r1'] } } as never, { lunch: 1, dinner: 2 });
+assert.equal(old.lunch, 10); assert.equal(old.dinner, 2); assert.deepEqual(old.meals.aksam, []); assert.deepEqual(old.firin, []);
+
+// Sipariş: birim dönüşümü ve metin
+assert.deepEqual(ingredientToOrderItem({ name: 'Un', qty: 600, unit: 'g' }), { name: 'Un', qty: 0.6, unit: 'kg' });
+assert.deepEqual(ingredientToOrderItem({ name: 'Süt', qty: 2.5, unit: 'L' }), { name: 'Süt', qty: 2.5, unit: 'L' });
+assert.equal(ingredientToOrderItem({ name: 'Yumurta', qty: 30, unit: 'adet' }).unit, 'Adet');
+assert.ok(orderToText([{ name: 'Un', qty: 2, unit: 'kg' }]).includes('2 kg'));
+assert.deepEqual(parseNameList('Un, Şeker\nTuz;Un'), ['Un', 'Şeker', 'Tuz']);
 
 // Yedek doğrulama
 assert.throws(() => parseMutfakBackup('{"foo":1}'));

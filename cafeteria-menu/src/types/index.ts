@@ -102,4 +102,43 @@ export interface CategoryMeta {
 }
 
 export type ViewMode = 'calendar' | 'list';
-export type ActiveTab = 'planner' | 'pool' | 'ingredients' | 'export' | 'settings';
+export type ActiveTab = 'planner' | 'pool' | 'kitchen' | 'order' | 'settings';
+
+// --- MUTFAK (günlük tüketim raporu) -----------------------------------------
+
+export type KitchenMealKey = 'kahvalti' | 'ogle' | 'aksam' | 'ara';
+export type KitchenCardKey = KitchenMealKey | 'firin';
+
+/** Raporda / günlük hesapta bir malzeme satırı. */
+export interface KitchenLine {
+  name: string;
+  qty: number;
+  unit: string;
+}
+
+/** Mutfaktakip `kt_days` kaydıyla uyumludur (içe aktarma doğrudan çalışır). */
+export interface KitchenDay {
+  lunch: number;
+  dinner: number;
+  /** Her öğünün hangi kişi sayısını kullandığı. */
+  basis: Record<KitchenMealKey, 'lunch' | 'dinner'>;
+  /** Menüden gelenlere EK olarak elle seçilen reçeteler. */
+  meals: Record<KitchenMealKey, string[]>;
+  /** Fırın ürünleri (ekmek, simit…). */
+  firin: { name: string; amt: number; unit: string }[];
+  /** Öğüne eklenen doğrudan tüketim ürünleri (süt, meyve suyu…). */
+  direkt: { name: string; amt: number; unit: string; meal?: KitchenMealKey }[];
+  /** Elle düzenlenen rapor kartları (yoksa menüden hesaplanır). */
+  report: Partial<Record<KitchenCardKey, KitchenLine[]>>;
+}
+
+// --- SİPARİŞ ------------------------------------------------------------------
+
+export const ORDER_UNITS = ['Adet', 'kg', 'L', 'Paket', 'Kutu', 'Koli', 'Çuval'] as const;
+export type OrderUnit = (typeof ORDER_UNITS)[number];
+
+export interface OrderItem {
+  name: string;
+  qty: number;
+  unit: string;
+}
