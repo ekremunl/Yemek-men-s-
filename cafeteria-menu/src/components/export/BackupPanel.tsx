@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { DatabaseBackup, Download, Upload, Share2 } from 'lucide-react';
 import { useAppStore } from '@/context/store';
-import { DailyMenu, FoodItem, LinkedRecipe, PersonCounts, RuleSettings } from '@/types';
+import { DailyMenu, FoodItem, KitchenDay, LinkedRecipe, OrderItem, PersonCounts, RuleSettings } from '@/types';
 
 const BACKUP_APP = 'yemekhane-menu-planlayici';
 const BACKUP_FORMAT = 1;
@@ -22,6 +22,9 @@ interface BackupFile {
     lockedDates?: string[];
     ruleSettings?: RuleSettings;
     persons?: PersonCounts;
+    kitchenDays?: Record<string, KitchenDay>;
+    orderItems?: OrderItem[];
+    orderPool?: string[];
   };
 }
 
@@ -60,12 +63,12 @@ export default function BackupPanel() {
     typeof File !== 'undefined';
 
   const createBackupFile = (): File => {
-    const { foodItems, menus, currentYear, currentMonth, recipes, lockedDates, ruleSettings, persons } = useAppStore.getState();
+    const { foodItems, menus, currentYear, currentMonth, recipes, lockedDates, ruleSettings, persons, kitchenDays, orderItems, orderPool } = useAppStore.getState();
     const backup: BackupFile = {
       app: BACKUP_APP,
       format: BACKUP_FORMAT,
       exportedAt: new Date().toISOString(),
-      data: { foodItems, menus, currentYear, currentMonth, recipes, lockedDates, ruleSettings, persons },
+      data: { foodItems, menus, currentYear, currentMonth, recipes, lockedDates, ruleSettings, persons, kitchenDays, orderItems, orderPool },
     };
     return new File([JSON.stringify(backup, null, 2)], buildFileName(), { type: 'application/json' });
   };
@@ -128,6 +131,9 @@ export default function BackupPanel() {
         ...(incoming.lockedDates ? { lockedDates: incoming.lockedDates } : {}),
         ...(incoming.ruleSettings ? { ruleSettings: incoming.ruleSettings } : {}),
         ...(incoming.persons ? { persons: incoming.persons } : {}),
+        ...(incoming.kitchenDays ? { kitchenDays: incoming.kitchenDays } : {}),
+        ...(incoming.orderItems ? { orderItems: incoming.orderItems } : {}),
+        ...(incoming.orderPool ? { orderPool: incoming.orderPool } : {}),
       });
     } else {
       // Birleştir: yemek havuzu kimliğe göre birleşir, aynı tarihte yedektekiler öncelikli olur.
@@ -140,6 +146,8 @@ export default function BackupPanel() {
         menus: Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date)),
         recipes: { ...current.recipes, ...(incoming.recipes ?? {}) },
         lockedDates: Array.from(new Set([...current.lockedDates, ...(incoming.lockedDates ?? [])])).sort(),
+        kitchenDays: { ...current.kitchenDays, ...(incoming.kitchenDays ?? {}) },
+        orderPool: Array.from(new Set([...current.orderPool, ...(incoming.orderPool ?? [])])).sort((a, b) => a.localeCompare(b, 'tr')),
       });
     }
 

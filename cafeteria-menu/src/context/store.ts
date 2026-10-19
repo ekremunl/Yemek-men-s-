@@ -4,8 +4,9 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import {
   FoodItem, DailyMenu, CategoryKey, ConflictWarning, PlannerMealKey, MealCourseField, FourCourseMeal, MainMealKey,
-  LinkedRecipe, RuleSettings, DEFAULT_RULE_SETTINGS, PersonCounts, ActiveTab,
+  LinkedRecipe, RuleSettings, DEFAULT_RULE_SETTINGS, PersonCounts, ActiveTab, KitchenDay, OrderItem,
 } from '@/types';
+import { emptyKitchenDay, normalizeKitchenDay } from '@/lib/kitchen';
 import { SEED_DATA } from '@/lib/seedData';
 import { isTagAllowedForCategory } from '@/lib/tags';
 import { generateId, isSameWeek, MONTH_NAMES_TR, parseDate } from '@/lib/utils';
@@ -77,6 +78,25 @@ interface AppState {
   /** Mutfaktakip reçete kopyaları (kimlik → reçete). */
   recipes: Record<string, LinkedRecipe>;
   setRecipes: (recipes: Record<string, LinkedRecipe>) => void;
+  /** Reçete ekler/günceller (id yoksa üretir). Kaydedilen reçeteyi döndürür. */
+  saveRecipe: (recipe: Omit<LinkedRecipe, 'id'> & { id?: string }) => LinkedRecipe;
+  /** Reçeteyi siler; yemeklerdeki bağlantı ve mutfak günlerindeki seçimler de temizlenir. */
+  deleteRecipe: (id: string) => void;
+
+  // Mutfak günlük rapor
+  kitchenDays: Record<string, KitchenDay>;
+  /** Günü kopyalayıp `mutate` ile değiştirir ve kaydeder (gün yoksa varsayılan kişi sayılarıyla oluşturur). */
+  updateKitchenDay: (date: string, mutate: (day: KitchenDay) => void) => void;
+  setKitchenDays: (days: Record<string, KitchenDay>) => void;
+
+  // Sipariş
+  orderItems: OrderItem[];
+  orderPool: string[];
+  addOrderItems: (items: OrderItem[]) => void;
+  removeOrderItem: (index: number) => void;
+  clearOrder: () => void;
+  addToOrderPool: (names: string[]) => void;
+  removeFromOrderPool: (index: number) => void;
 
   // Monthly menus
   menus: DailyMenu[];
@@ -280,6 +300,9 @@ export const useAppStore = create<AppState>()(
       toasts: [],
       activeTab: 'planner',
       recipes: {},
+      kitchenDays: {},
+      orderItems: [],
+      orderPool: [],
       lockedDates: [],
       generationError: null,
       ruleSettings: DEFAULT_RULE_SETTINGS,
@@ -428,6 +451,81 @@ export const useAppStore = create<AppState>()(
           }),
         }));
       },
+
+      saveRecipe: (input) => {
+        const id = input.id ?? `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        const recipe: LinkedRecipe = { id, name: input.name, cat: input.cat, ings: input.ings };
+        set((state) => ({ recipes: { ...state.recipes, [id]: recipe } }));
+        return recipe;
+      },
+
+      deleteRecipe: (id) =>
+        set((state) => {
+          const { [id]: _removed, ...rest } = state.recipes;
+          void _removed;
+          const kitchenDays = Object.fromEntries(
+            Object.entries(state.kitchenDays).map(([date, day]) => {
+              const d = normalizeKitchenDay(day, state.persons);
+              (Object.keys(d.meals) as (keyof KitchenDay['meals'])[]).forEach((k) => {
+                d.meals[k] = d.meals[k].filter((x) => x !== id);
+              });
+              return [date, d];
+            })
+          );
+          return {
+            recipes: rest,
+            kitchenDays,
+            foodItems: state.foodItems.map((item) => {
+              if (item.recipeId !== id) return item;
+              const { recipeId: _r, ...others } = item;
+              void _r;
+              return others;
+            }),
+          };
+        }),
+
+      updateKitchenDay: (date, mutate) =>
+        set((state) => {
+          const current = state.kitchenDays[date];
+          const day: KitchenDay = current
+            ? (JSON.parse(JSON.stringify(normalizeKitchenDay(current, state.persons))) as KitchenDay)
+            : emptyKitchenDay(state.persons);
+          mutate(day);
+          return { kitchenDays: { ...state.kitchenDays, [date]: day } };
+        }),
+
+      setKitchenDays: (days) => set({ kitchenDays: days }),
+
+      addOrderItems: (items) =>
+        set((state) => {
+          const list = state.orderItems.map((o) => ({ ...o }));
+          const pool = [...state.orderPool];
+          items.forEach((item) => {
+            const name = item.name.trim();
+            if (!name || !(item.qty > 0)) return;
+            const found = list.find((o) => o.name.toLocaleLowerCase('tr-TR') === name.toLocaleLowerCase('tr-TR') && o.unit === item.unit);
+            if (found) found.qty += item.qty;
+            else list.push({ name, qty: item.qty, unit: item.unit });
+            if (!pool.some((p) => p.toLocaleLowerCase('tr-TR') === name.toLocaleLowerCase('tr-TR'))) pool.push(name);
+          });
+          return { orderItems: list, orderPool: pool.sort((a, b) => a.localeCompare(b, 'tr')) };
+        }),
+
+      removeOrderItem: (index) => set((state) => ({ orderItems: state.orderItems.filter((_, i) => i !== index) })),
+
+      clearOrder: () => set({ orderItems: [] }),
+
+      addToOrderPool: (names) =>
+        set((state) => {
+          const pool = [...state.orderPool];
+          names.forEach((raw) => {
+            const name = raw.trim();
+            if (name && !pool.some((p) => p.toLocaleLowerCase('tr-TR') === name.toLocaleLowerCase('tr-TR'))) pool.push(name);
+          });
+          return { orderPool: pool.sort((a, b) => a.localeCompare(b, 'tr')) };
+        }),
+
+      removeFromOrderPool: (index) => set((state) => ({ orderPool: state.orderPool.filter((_, i) => i !== index) })),
 
       setRecipes: (recipes) => set({ recipes }),
 
@@ -825,6 +923,9 @@ export const useAppStore = create<AppState>()(
         currentYear: state.currentYear,
         currentMonth: state.currentMonth,
         recipes: state.recipes,
+        kitchenDays: state.kitchenDays,
+        orderItems: state.orderItems,
+        orderPool: state.orderPool,
         lockedDates: state.lockedDates,
         ruleSettings: state.ruleSettings,
         persons: state.persons,

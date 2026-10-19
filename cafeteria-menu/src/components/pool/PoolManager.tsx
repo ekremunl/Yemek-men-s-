@@ -139,15 +139,15 @@ function ItemMetaFields({ item }: { item: FoodItem }) {
       <div>
         <p className="flex items-center gap-1.5 text-[11px] font-medium text-white/50 mb-1.5">
           <BookOpen className="w-3.5 h-3.5 text-emerald-300" />
-          Mutfaktakip reçetesi
+          Reçete (Mutfak)
         </p>
         {recipeList.length === 0 ? (
           <p className="text-[11px] text-white/40 leading-relaxed">
-            Henüz reçete içe aktarılmadı.{' '}
-            <button type="button" onClick={() => setActiveTab('settings')} className="underline underline-offset-2 text-indigo-300">
-              Ayarlar → Mutfaktakip
+            Henüz reçete yok.{' '}
+            <button type="button" onClick={() => setActiveTab('kitchen')} className="underline underline-offset-2 text-indigo-300">
+              Mutfak → Reçeteler
             </button>
-            {' '}bölümünden alın.
+            {' '}bölümünden ekleyin ya da eski uygulamadan alın.
           </p>
         ) : (
           <div className="flex items-stretch gap-2">
