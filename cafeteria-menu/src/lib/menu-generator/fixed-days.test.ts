@@ -38,3 +38,23 @@ for (const f of frozen) {
 assert.deepEqual(validateMonthlyMenu(week), []);
 
 console.log('fixed-days testleri geçti');
+
+// 4) Gün yasağı: Pazartesi günleri tavuk yok (tüm öğünler ve kategoriler).
+{
+  const banned = generateMonthlyMenu(SAMPLE_POOL, 11, 2026, { seed: 3, weekdayBans: { 1: ['tavuk'] } });
+  const mondays = banned.days.filter((d) => d.weekday === 1);
+  assert.ok(mondays.length >= 4, 'ayda en az 4 Pazartesi');
+  for (const d of mondays) {
+    for (const slot of ['ogle', 'aksam'] as const) {
+      for (const dish of Object.values(d.meals[slot])) {
+        assert.ok(!dish!.tags.includes('tavuk'), `${d.date} ${slot}: ${dish!.name} tavuklu olmamalı`);
+      }
+    }
+  }
+  const chickenElsewhere = banned.days.some(
+    (d) => d.weekday !== 1 && (['ogle', 'aksam'] as const).some((s) => Object.values(d.meals[s]).some((x) => x!.tags.includes('tavuk'))),
+  );
+  assert.ok(chickenElsewhere, 'diğer günlerde tavuk hâlâ çıkabilmeli');
+  assert.deepEqual(validateMonthlyMenu(banned, { weekdayBans: { 1: ['tavuk'] } }), []);
+}
+console.log('gün yasağı testi geçti');
