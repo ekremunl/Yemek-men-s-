@@ -51,6 +51,11 @@ export interface RuleSettings {
   weekendSync: boolean;
   /** Ana yemeğin eşlikçi listesi zorunlu olsun. */
   requireCompanions: boolean;
+  /**
+   * Haftanın günlerine göre yasaklı etiketler. Anahtar: 0 = Pazar … 6 = Cumartesi.
+   * Ör. { "1": ["tavuk"] } → Pazartesi günleri tavuklu yemek çıkmaz. Eski kayıtlarda alan olmayabilir.
+   */
+  weekdayBans?: Record<string, string[]>;
 }
 
 export const DEFAULT_RULE_SETTINGS: RuleSettings = {
@@ -58,6 +63,7 @@ export const DEFAULT_RULE_SETTINGS: RuleSettings = {
   maxConsecutiveProteinDays: 2,
   weekendSync: true,
   requireCompanions: true,
+  weekdayBans: {},
 };
 
 /** Malzeme / üretim listesi için kişi sayıları. */

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx src/lib/menu-generator/menu-generator.test.ts && tsx src/lib/menu-generator/fixed-days.test.ts && tsx src/lib/menu-bridge.test.ts && tsx src/lib/mutfak-shopping.test.ts && tsx src/context/store.integration.test.ts && tsx src/context/store.tags.test.ts"
+    "test": "tsx src/lib/menu-generator/menu-generator.test.ts && tsx src/lib/menu-generator/fixed-days.test.ts && tsx src/lib/menu-bridge.test.ts && tsx src/lib/mutfak-shopping.test.ts && tsx src/lib/weekday-ban.test.ts && tsx src/context/store.integration.test.ts && tsx src/context/store.tags.test.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

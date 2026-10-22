@@ -31,6 +31,7 @@ export type RuleId =
   | 'INTRA_CARB_MAIN_WITH_RICE_PASTA'
   | 'INTRA_DOMINANT_INGREDIENT'
   | 'SERVING_TIME'
+  | 'WEEKDAY_BAN'
   | 'COMPANION_REQUIRED'
   | 'DAY_DUPLICATE_ITEM'
   | 'DAY_PROTEIN_REPEAT'
@@ -151,6 +152,14 @@ export const RULES: readonly Rule[] = [
         return servingAllows(dish, 'aksam', true, cfg);
       }
       return true;
+    },
+  },
+  {
+    id: 'WEEKDAY_BAN',
+    description: "Bu günün yasak listesindeki bir etiketi taşıyor (Ayarlar → Menü Kuralları → Gün yasakları; ör. Pazartesi günleri tavuk yok).",
+    allows(dish, ctx) {
+      const banned = ctx.config.weekdayBans[currentDay(ctx).weekday] ?? [];
+      return !dish.tags.some((t) => banned.includes(t));
     },
   },
   {

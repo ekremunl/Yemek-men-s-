@@ -82,6 +82,13 @@ export interface GeneratorConfig {
    */
   requireCompanions: boolean;
 
+  // --- Gün yasakları ---
+  /**
+   * Haftanın günlerine göre yasaklı etiketler (0 = Pazar … 6 = Cumartesi). O günün hiçbir öğününde
+   * bu etiketlerden birini taşıyan yemek yer almaz (sert kural). Ör. { 1: ['tavuk'] } → Pazartesi günleri tavuk yok.
+   */
+  weekdayBans: Record<number, Tag[]>;
+
   // --- Yumuşak eşleşme cezaları (skorlama; kural çiğnetmez) ---
   /** Aynı öğünde bir yemekte `a`, diğerinde `b` etiketlerinden biri varsa `weight` kadar ceza. */
   softPairings: SoftPairing[];
@@ -142,6 +149,7 @@ export const DEFAULT_CONFIG: Omit<GeneratorConfig, 'seed'> = {
   maxBacktracksPerAttempt: 20_000,
   previousDays: [],
   fixedDays: [],
+  weekdayBans: {},
 };
 
 export function resolveConfig(options: GeneratorOptions = {}): GeneratorConfig {
@@ -153,6 +161,7 @@ export function resolveConfig(options: GeneratorOptions = {}): GeneratorConfig {
     weights: { ...DEFAULT_CONFIG.weights, ...options.weights },
     previousDays: options.previousDays ?? [],
     fixedDays: options.fixedDays ?? [],
+    weekdayBans: options.weekdayBans ?? {},
     seed: options.seed ?? Math.floor(Math.random() * 0x7fffffff),
   };
 }

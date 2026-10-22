@@ -412,6 +412,11 @@ export function ruleSettingsToOptions(settings: RuleSettings): GeneratorOptions 
     maxConsecutiveProteinDays: settings.maxConsecutiveProteinDays,
     weekendSyncCategories: settings.weekendSync ? ['çorba', 'yan_urun', 'tatli_meyve'] : [],
     requireCompanions: settings.requireCompanions,
+    weekdayBans: Object.fromEntries(
+      Object.entries(settings.weekdayBans ?? {})
+        .map(([day, tags]) => [Number(day), tags.flatMap((tag) => ENGLISH_TO_ENGINE_TAGS[tag] ?? [])] as const)
+        .filter(([, tags]) => tags.length > 0),
+    ),
   };
 }
 
