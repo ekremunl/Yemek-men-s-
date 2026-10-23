@@ -60,8 +60,18 @@ export default function RuleSettingsPanel() {
           Varsayılan
         </button>
       </div>
-      <Stepper label="Ana yemek bekleme süresi" hint="Aynı ana yemek kaç gün tekrar edemez (gün)" value={ruleSettings.mainCooldownDays} min={0} max={14} onChange={(n) => setRuleSettings({ mainCooldownDays: n })} />
+      <Stepper label="Ana yemek: en az kaç gün arayla" hint="Genel aralık. Tek tek yemek için Havuz'da yemeğin ayrıntısından ya da Plan'daki Tekrar özeti'nden özel aralık verin." value={ruleSettings.mainCooldownDays + 1} min={1} max={15} onChange={(n) => setRuleSettings({ mainCooldownDays: n - 1 })} />
       <Stepper label="Aynı protein üst üste" hint="Tavuk / kırmızı et / balık en fazla kaç gün art arda" value={ruleSettings.maxConsecutiveProteinDays} min={1} max={5} onChange={(n) => setRuleSettings({ maxConsecutiveProteinDays: n })} />
+      <details className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-1">
+        <summary className="min-h-[3rem] flex items-center text-sm text-white/70 cursor-pointer select-none">Gelişmiş tekrar ayarları</summary>
+        <div className="space-y-4 pb-3">
+      <Toggle label="Adil dağıtım" hint="Bir yemek ayda ortalamanın çok üstünde çıkmasın; çeşitler dengeli dönsün" checked={ruleSettings.fairRotation ?? false} onChange={(v) => setRuleSettings({ fairRotation: v })} />
+      {(ruleSettings.fairRotation ?? false) && (
+        <Stepper label="Adil paydan fazla tekrar" hint="0 = tam eşit dağıtım, yükseldikçe esner (havuz küçükse 1-2 deneyin)" value={ruleSettings.rotationSlack ?? 1} min={0} max={4} onChange={(n) => setRuleSettings({ rotationSlack: n })} />
+      )}
+      <Stepper label="Çorba / yan yemek bekleme" hint="Aynı çorba, yan yemek ve tamamlayıcı kaç gün tekrar etmesin (0 = kapalı)" value={ruleSettings.sideCooldownDays ?? 0} min={0} max={5} onChange={(n) => setRuleSettings({ sideCooldownDays: n })} />
+        </div>
+      </details>
       <Toggle label="Hafta sonu akşamı öğleyle aynı" hint="Çorba, yan yemek ve tamamlayıcı Cumartesi/Pazar akşamına kopyalanır" checked={ruleSettings.weekendSync} onChange={(v) => setRuleSettings({ weekendSync: v })} />
       <Toggle label="Eşlikçi listeleri zorunlu" hint="Ana yemeğe seçtiğiniz eşlikçiler dışındaki çorba/yan yemek gelmez" checked={ruleSettings.requireCompanions} onChange={(v) => setRuleSettings({ requireCompanions: v })} />
       <div className="border-t border-white/10 pt-4 space-y-3">
@@ -107,7 +117,7 @@ export default function RuleSettingsPanel() {
       </div>
 
       <p className="text-[11px] text-white/35 leading-relaxed">
-        Not: Bekleme süresini yükseltmek için havuzda yeterli ana yemek gerekir (en az 2 × (süre + 1)). Yetmezse üretim hata mesajıyla nedenini söyler.
+        Not: Aralığı büyütmek için havuzda yeterli ana yemek gerekir. Yetmezse üretici aralıkları gevşetir ve bunu bildirimle söyler. Yetmezse üretim hata mesajıyla nedenini söyler.
       </p>
     </section>
   );

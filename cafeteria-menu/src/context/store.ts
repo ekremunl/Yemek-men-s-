@@ -73,6 +73,8 @@ interface AppState {
   confirmInferredTags: () => number;
   /** Porsiyon kalorisi (kcal); null/0 temizler. */
   setCalories: (id: string, kcal: number | null) => void;
+  /** Ana yemeğin tekrar aralığı (en az kaç gün arayla); null = genel aralığı kullan. */
+  setRepeatGap: (id: string, days: number | null) => void;
   /** Mutfaktakip reçetesine bağlar (null = bağı kaldırır). */
   linkRecipe: (id: string, recipeId: string | null) => void;
   /** Mutfaktakip reçete kopyaları (kimlik → reçete). */
@@ -437,6 +439,18 @@ export const useAppStore = create<AppState>()(
             const { calories: _old, ...rest } = item;
             void _old;
             return value ? { ...rest, calories: value } : rest;
+          }),
+        }));
+      },
+
+      setRepeatGap: (id, days) => {
+        const value = days && Number.isFinite(days) && days >= 1 ? Math.min(60, Math.round(days)) : undefined;
+        set((state) => ({
+          foodItems: state.foodItems.map((item) => {
+            if (item.id !== id) return item;
+            const { repeatGapDays: _old, ...rest } = item;
+            void _old;
+            return value ? { ...rest, repeatGapDays: value } : rest;
           }),
         }));
       },

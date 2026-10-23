@@ -24,6 +24,10 @@ export interface RuleContext {
   dayIndex: number;
   slot: MealSlot;
   category: DishCategory;
+  /** Bu ayki kullanım sayıları (yemek kimliği → adet). Yoksa aylık sınır denetlenmez. */
+  usage?: ReadonlyMap<string, number>;
+  /** Kategori başına aylık azami kullanım (config.monthlyCapSlack açıksa hesaplanır). */
+  monthlyCap?: Partial<Record<DishCategory, number>>;
 }
 
 export type RuleId =
@@ -38,6 +42,8 @@ export type RuleId =
   | 'DAY_LEGUME_THEN_LIGHT'
   | 'WEEKEND_LUNCH_PRACTICAL'
   | 'COOLDOWN_MAIN_DISH'
+  | 'COOLDOWN_CATEGORY'
+  | 'MONTHLY_CAP'
   | 'COOLDOWN_PROTEIN_STREAK';
 
 export interface Rule {
@@ -243,12 +249,35 @@ export const RULES: readonly Rule[] = [
   // 4) SIKLIK / TEKRAR -------------------------------------------------------
   {
     id: 'COOLDOWN_MAIN_DISH',
-    description: 'Aynı ana yemek, kullanıldıktan sonra mainCooldownDays gün boyunca (ve aynı gün içinde) tekrar edemez.',
+    description: 'Ana yemek, kullanıldıktan sonra kendi tekrar aralığı (yoksa genel bekleme süresi) dolmadan tekrar edemez.',
     allows(dish, ctx) {
       if (dish.category !== 'ana_yemek') return true;
-      const n = ctx.config.mainCooldownDays;
+      const { dishCooldownScale: scale, mainCooldownDays } = ctx.config;
+      // Yemeğe özel aralık varsa o, yoksa genel süre.
+      const n = dish.cooldownDays !== undefined && scale > 0 ? Math.floor(dish.cooldownDays * scale) : mainCooldownDays;
       const window = [...previousDays(ctx, n), currentDay(ctx), ...nextDays(ctx, n)];
       return !window.some((day) => MEAL_SLOTS.some((s) => day.meals[s].ana_yemek?.id === dish.id));
+    },
+  },
+  {
+    id: 'COOLDOWN_CATEGORY',
+    description: 'Çorba, yan yemek ve tamamlayıcı da kısa süre içinde tekrar edemez (Ayarlar → Menü Kuralları → Yan ürün bekleme süresi).',
+    allows(dish, ctx) {
+      if (dish.category === 'ana_yemek') return true; // ana yemek kendi kuralıyla yönetilir
+      const n = ctx.config.categoryCooldownDays[dish.category] ?? 0;
+      if (n <= 0) return true;
+      // Aynı gün (öğle/akşam) ayrı kuralla (DAY_DUPLICATE_ITEM / hafta sonu senkronu) yönetilir.
+      const window = [...previousDays(ctx, n), ...nextDays(ctx, n)];
+      return !window.some((day) => MEAL_SLOTS.some((s) => day.meals[s][dish.category]?.id === dish.id));
+    },
+  },
+  {
+    id: 'MONTHLY_CAP',
+    description: 'Bu yemek bu ay zaten adil payından fazla kullanıldı (Ayarlar → Menü Kuralları → Adil dağıtım).',
+    allows(dish, ctx) {
+      const cap = ctx.monthlyCap?.[dish.category];
+      if (cap === undefined || !ctx.usage) return true;
+      return (ctx.usage.get(dish.id) ?? 0) < cap;
     },
   },
   {

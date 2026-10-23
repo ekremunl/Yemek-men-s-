@@ -89,6 +89,25 @@ export interface GeneratorConfig {
    */
   weekdayBans: Record<number, Tag[]>;
 
+  // --- Adil dağıtım ve tekrar sınırları ---
+  /**
+   * null → kapalı. Sayı → bir yemek ayda en fazla (adil pay + slack) kez kullanılır.
+   * Adil pay = kategorideki yemek yeri sayısı ÷ havuzdaki yemek sayısı (yukarı yuvarlanır).
+   * Havuz buna yetmezse üretici sınırı kademeli gevşetir ve bunu uyarıyla bildirir.
+   */
+  monthlyCapSlack: number | null;
+  /**
+   * Çorba / yan yemek / tamamlayıcı için sert bekleme süresi (gün). Ana yemek `mainCooldownDays` ile yönetilir.
+   * Ör. { yan_urun: 2 } → aynı yan yemek, kullanıldıktan sonra 2 gün tekrar edemez.
+   */
+  categoryCooldownDays: Partial<Record<DishCategory, number>>;
+
+  /**
+   * Yemeğe özel bekleme sürelerinin (Dish.cooldownDays) çarpanı. 1 = olduğu gibi, 0.5 = yarıya indir,
+   * 0 = yok say (genel süre kullanılır). Üretici havuz yetmezse bunu kademeli düşürür.
+   */
+  dishCooldownScale: number;
+
   // --- Yumuşak eşleşme cezaları (skorlama; kural çiğnetmez) ---
   /** Aynı öğünde bir yemekte `a`, diğerinde `b` etiketlerinden biri varsa `weight` kadar ceza. */
   softPairings: SoftPairing[];
@@ -150,6 +169,9 @@ export const DEFAULT_CONFIG: Omit<GeneratorConfig, 'seed'> = {
   previousDays: [],
   fixedDays: [],
   weekdayBans: {},
+  monthlyCapSlack: null,
+  categoryCooldownDays: {},
+  dishCooldownScale: 1,
 };
 
 export function resolveConfig(options: GeneratorOptions = {}): GeneratorConfig {
@@ -162,6 +184,9 @@ export function resolveConfig(options: GeneratorOptions = {}): GeneratorConfig {
     previousDays: options.previousDays ?? [],
     fixedDays: options.fixedDays ?? [],
     weekdayBans: options.weekdayBans ?? {},
+    dishCooldownScale: options.dishCooldownScale ?? DEFAULT_CONFIG.dishCooldownScale,
+    monthlyCapSlack: options.monthlyCapSlack === undefined ? DEFAULT_CONFIG.monthlyCapSlack : options.monthlyCapSlack,
+    categoryCooldownDays: { ...DEFAULT_CONFIG.categoryCooldownDays, ...options.categoryCooldownDays },
     seed: options.seed ?? Math.floor(Math.random() * 0x7fffffff),
   };
 }

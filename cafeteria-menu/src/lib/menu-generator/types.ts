@@ -41,6 +41,11 @@ export interface Dish {
   /** 0..1 arası isteğe bağlı tercih puanı; skorlamada küçük bir bonus verir. */
   popularity?: number;
   /**
+   * Yalnızca ana yemekler için: bu yemeğe özel bekleme süresi (gün). Verilirse genel `mainCooldownDays` yerine
+   * kullanılır: yemek kullanıldıktan sonra bu kadar gün tekrar edemez (yani en az cooldownDays + 1 gün arayla).
+   */
+  cooldownDays?: number;
+  /**
    * Bu yemekle aynı öğünde tercih edilen yemeklerin id'leri (ör. bir ana yemeğin
    * önerilen çorba/yan/tamamlayıcıları). Sert kural değildir; skorlamada güçlü bonus verir.
    */

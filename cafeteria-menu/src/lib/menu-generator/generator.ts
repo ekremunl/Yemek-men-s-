@@ -259,6 +259,45 @@ export function generateMonthlyMenu(
 
   let deepest: { index: number; diagnostics: FailureDiagnostics } | undefined;
 
+  // Tekrar sınırı seviyeleri: önce istenen sıkılık; çözülemezse kademeli gevşetilir; en sonda eski davranış.
+  const hasDishCooldowns = dishPool.some((d) => d.category === 'ana_yemek' && d.cooldownDays !== undefined);
+  const strict =
+    config.monthlyCapSlack !== null || hasDishCooldowns || Object.values(config.categoryCooldownDays).some((n) => (n ?? 0) > 0);
+  const halved = Object.fromEntries(Object.entries(config.categoryCooldownDays).map(([k, v]) => [k, Math.floor((v ?? 0) / 2)]));
+  const levels: { config: GeneratorConfig; note?: string }[] = [];
+  if (strict) {
+    levels.push({ config });
+    levels.push({
+      config: {
+        ...config,
+        monthlyCapSlack: config.monthlyCapSlack === null ? null : config.monthlyCapSlack + 1,
+        categoryCooldownDays: halved,
+        dishCooldownScale: config.dishCooldownScale * 0.5,
+      },
+      note: 'Havuzdaki çeşit sınırlı olduğu için tekrar sınırları (yemek bazlı aralıklar dahil) biraz gevşetildi; bazı yemekler daha sık görünebilir. Havuza yemek ekleyin veya aralıkları kısaltın.',
+    });
+  }
+  levels.push({
+    config: { ...config, monthlyCapSlack: null, categoryCooldownDays: {}, dishCooldownScale: 0 },
+    note: strict
+      ? 'Havuzdaki çeşit çok az olduğu için yemek bazlı tekrar aralıkları ve diğer sınırlar uygulanamadı; aynı yemekler sık tekrar edecek. Havuza yeni yemek ekleyin.'
+      : undefined,
+  });
+
+  for (const level of levels) {
+  const config = level.config;
+  // Aylık azami kullanım: kategorideki yemek yeri sayısı ÷ havuzdaki yemek sayısı (yukarı) + pay.
+  const monthlyCap: Partial<Record<DishCategory, number>> | undefined =
+    config.monthlyCapSlack === null
+      ? undefined
+      : Object.fromEntries(
+          CATEGORY_ORDER.flatMap((category) => {
+            const size = byCategory[category]?.length ?? 0;
+            const slots = dayCount * MEAL_SLOTS.filter((slot) => template[slot].includes(category)).length;
+            return size > 0 && slots > 0 ? [[category, Math.ceil(slots / size) + (config.monthlyCapSlack as number)]] : [];
+          }),
+        );
+
   for (let attempt = 0; attempt < config.maxAttempts; attempt++) {
     const timeline: DayMenu[] = [
       ...config.previousDays.map(cloneDay),
@@ -294,14 +333,15 @@ export function generateMonthlyMenu(
       const d = decisions[i];
       const { dayOffset, slot, category } = d;
       const dayIndex = offset + dayOffset;
-      const ctx: RuleContext = { config, timeline, dayIndex, slot, category };
+      const ctx: RuleContext = { config, timeline, dayIndex, slot, category, usage, monthlyCap };
       const day = timeline[dayIndex];
 
       // Hafta sonu senkronu: aday yok, öğledeki yemek kopyalanır ve yine kurallara sokulur.
       if (d.syncFromLunch) {
         const forced = day.meals.ogle[category];
         if (!forced) return solve(i + 1);
-        const violated = findViolation(forced, ctx);
+        // Hafta sonu senkronu aylık sınırdan muaftır (aynı yemek aynı gün iki kez sayılmasın).
+        const violated = findViolation(forced, { ...ctx, usage: undefined, monthlyCap: undefined });
         if (violated) {
           if (!deepest || i > deepest.index) {
             deepest = {
@@ -353,9 +393,10 @@ export function generateMonthlyMenu(
         seed: config.seed,
         attempts: attempt + 1,
         days: timeline.slice(offset),
-        warnings,
+        warnings: level.note ? [...warnings, level.note] : warnings,
       };
     }
+  }
   }
 
   const d = deepest?.diagnostics;

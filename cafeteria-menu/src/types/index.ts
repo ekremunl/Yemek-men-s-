@@ -22,6 +22,11 @@ export interface FoodItem {
   suggestedCompanions?: string[];
   /** Porsiyon başına kalori (kcal). Elle girilir. */
   calories?: number;
+  /**
+   * Yalnızca ana yemekler: bu yemek en az kaç gün arayla çıksın (ör. 14 = iki haftada bir).
+   * Boşsa genel ana yemek aralığı (Ayarlar → Menü Kuralları) geçerlidir.
+   */
+  repeatGapDays?: number;
   /** Mutfaktakip reçete kimliği (varsa malzeme listesi bu reçeteden hesaplanır). */
   recipeId?: string;
 }
@@ -56,6 +61,12 @@ export interface RuleSettings {
    * Ör. { "1": ["tavuk"] } → Pazartesi günleri tavuklu yemek çıkmaz. Eski kayıtlarda alan olmayabilir.
    */
   weekdayBans?: Record<string, string[]>;
+  /** Adil dağıtım: bir yemek ayda ortalamanın çok üstünde çıkmasın. Varsayılan kapalı. */
+  fairRotation?: boolean;
+  /** Adil paydan kaç fazla tekrara izin verilsin (0 = tam eşit dağıtım). */
+  rotationSlack?: number;
+  /** Çorba / yan yemek / tamamlayıcı için bekleme süresi (gün); 0 = kapalı. */
+  sideCooldownDays?: number;
 }
 
 export const DEFAULT_RULE_SETTINGS: RuleSettings = {
@@ -64,6 +75,9 @@ export const DEFAULT_RULE_SETTINGS: RuleSettings = {
   weekendSync: true,
   requireCompanions: true,
   weekdayBans: {},
+  fairRotation: false,
+  rotationSlack: 1,
+  sideCooldownDays: 0,
 };
 
 /** Malzeme / üretim listesi için kişi sayıları. */

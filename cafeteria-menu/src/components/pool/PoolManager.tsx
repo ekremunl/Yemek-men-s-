@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Trash2, Soup, UtensilsCrossed, Salad, Apple, Search, Cookie, Tag, RotateCcw,
-  CheckSquare, Square, Sparkles, ChevronDown, Flame, BookOpen, Link2Off,
+  CheckSquare, Square, Sparkles, ChevronDown, Flame, BookOpen, Link2Off, Repeat,
 } from 'lucide-react';
 import { useAppStore, FoodItemMetadataChanges } from '@/context/store';
 import { CategoryKey, FoodItem } from '@/types';
@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { IngredientInput, TagPicker } from './TagPicker';
 import { CompanionPicker } from './CompanionPicker';
 import ItemPicker from '@/components/ui/ItemPicker';
+import RepeatGapPicker from '@/components/ui/RepeatGapPicker';
 import { matchRecipes } from '@/lib/mutfak';
 
 const CAT_ICONS: Record<CategoryKey, React.ReactNode> = {
@@ -90,6 +91,8 @@ const FILTER_OFF = 'border-white/10 text-white/50 hover:bg-white/5 hover:text-wh
 /** Yemeğin kalorisi (kcal/porsiyon) ve Mutfaktakip reçete bağlantısı. Değişiklikler anında kaydedilir. */
 function ItemMetaFields({ item }: { item: FoodItem }) {
   const setCalories = useAppStore((s) => s.setCalories);
+  const setRepeatGap = useAppStore((s) => s.setRepeatGap);
+  const defaultGap = useAppStore((s) => s.ruleSettings.mainCooldownDays + 1);
   const linkRecipe = useAppStore((s) => s.linkRecipe);
   const recipes = useAppStore((s) => s.recipes);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
@@ -114,6 +117,15 @@ function ItemMetaFields({ item }: { item: FoodItem }) {
 
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-3">
+      {item.category === 'mainCourses' && (
+        <div>
+          <p className="flex items-center gap-1.5 text-[11px] font-medium text-white/50 mb-1.5">
+            <Repeat className="w-3.5 h-3.5 text-indigo-300" />
+            Tekrar aralığı: en az kaç gün arayla çıksın
+          </p>
+          <RepeatGapPicker value={item.repeatGapDays} defaultGap={defaultGap} onChange={(d) => setRepeatGap(item.id, d)} />
+        </div>
+      )}
       <div>
         <label className="flex items-center gap-1.5 text-[11px] font-medium text-white/50 mb-1.5" htmlFor={`kcal-${item.id}`}>
           <Flame className="w-3.5 h-3.5 text-orange-300" />
@@ -484,8 +496,14 @@ function CategoryPanel({ categoryKey, filter, selectMode, selected, onToggleSele
                   </button>
                 </div>
 
-                {!isEditing && (item.calories || item.recipeId) && (
+                {!isEditing && (item.calories || item.recipeId || item.repeatGapDays) && (
                   <div className="flex flex-wrap gap-1 px-3 pb-1.5 -mt-0.5">
+                    {item.repeatGapDays ? (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border border-indigo-400/30 text-indigo-300">
+                        <Repeat className="w-2.5 h-2.5" />
+                        {item.repeatGapDays} günde bir
+                      </span>
+                    ) : null}
                     {item.calories ? (
                       <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border border-orange-400/30 text-orange-300">
                         <Flame className="w-2.5 h-2.5" />

@@ -5,6 +5,7 @@ import { AlertTriangle, Download, LayoutGrid, List, Lock, Sparkles, X } from 'lu
 import { useAppStore } from '@/context/store';
 import CalendarView from './CalendarView';
 import ListView from './ListView';
+import RepeatSummary from './RepeatSummary';
 import ExportPanel from '@/components/export/ExportPanel';
 import BottomSheet from '@/components/ui/BottomSheet';
 import { cn, getMonthMenus, MONTH_NAMES_TR } from '@/lib/utils';
@@ -149,6 +150,8 @@ export default function MenuPlanner() {
       )}
 
       {view === 'calendar' ? <CalendarView /> : <ListView />}
+
+      <RepeatSummary />
 
       <BottomSheet open={exportOpen} onClose={() => setExportOpen(false)} full maxWidthClass="md:max-w-3xl">
         <ExportPanel />
