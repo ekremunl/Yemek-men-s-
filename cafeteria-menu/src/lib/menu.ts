@@ -282,6 +282,11 @@ export function foodItemToDish(item: FoodItem): Dish | null {
     incompatibleWithTags: unique(incompatible),
     mainIngredients: unique([...(item.mainIngredients ?? []), ...inferIngredients(item)]),
     suggestedCompanionIds: item.suggestedCompanions?.length ? [...item.suggestedCompanions] : undefined,
+    // "En az N gün arayla" → N - 1 gün bekleme.
+    cooldownDays:
+      category === 'ana_yemek' && item.repeatGapDays && item.repeatGapDays >= 1
+        ? Math.max(0, Math.floor(item.repeatGapDays) - 1)
+        : undefined,
   };
 }
 
@@ -405,6 +410,11 @@ export function summarizeCalories(menu: DailyMenu | undefined, itemById: Map<str
   return out;
 }
 
+/** Çorba bir fazla (günde iki öğünde de çıktığı için), yan yemek ve tamamlayıcı ayarlanan süre kadar beklesin. */
+function sideCooldownToEngine(days: number) {
+  return days > 0 ? { 'çorba': days + 1, yan_urun: days, tatli_meyve: days } : {};
+}
+
 /** Arayüzdeki kural ayarlarını motor seçeneklerine çevirir. */
 export function ruleSettingsToOptions(settings: RuleSettings): GeneratorOptions {
   return {
@@ -417,6 +427,8 @@ export function ruleSettingsToOptions(settings: RuleSettings): GeneratorOptions 
         .map(([day, tags]) => [Number(day), tags.flatMap((tag) => ENGLISH_TO_ENGINE_TAGS[tag] ?? [])] as const)
         .filter(([, tags]) => tags.length > 0),
     ),
+    monthlyCapSlack: (settings.fairRotation ?? false) ? Math.max(0, settings.rotationSlack ?? 1) : null,
+    categoryCooldownDays: sideCooldownToEngine(settings.sideCooldownDays ?? 0),
   };
 }
 
@@ -619,13 +631,23 @@ export function evaluateCandidates(
   }
 
   const config = resolveConfig({ ...MENU_ENGINE_OPTIONS, ...options, seed });
-  const ctx = { config, timeline, dayIndex, slot, category };
   const currentId = byDate.get(date)?.[mealKey][field] ?? null;
 
+  // Bu ayki kullanım (değiştirilen yemek sayılmaz) ve adil dağıtım üst sınırı.
+  const monthPrefix = date.slice(0, 7);
   const usage = new Map<string, number>();
   for (const menu of menus) {
+    if (!menu.date.startsWith(monthPrefix)) continue;
     for (const id of getAllMenuItemIds(menu)) usage.set(id, (usage.get(id) ?? 0) + 1);
   }
+  if (currentId) usage.set(currentId, Math.max(0, (usage.get(currentId) ?? 1) - 1));
+  const categoryPool = dishes.filter((d) => d.category === category).length;
+  const monthDays = new Date(center.getFullYear(), center.getMonth() + 1, 0).getDate();
+  const monthlyCap =
+    config.monthlyCapSlack === null || categoryPool === 0
+      ? undefined
+      : { [category]: Math.ceil((monthDays * 2) / categoryPool) + config.monthlyCapSlack };
+  const ctx = { config, timeline, dayIndex, slot, category, usage, monthlyCap };
 
   const violations: Record<string, string> = {};
   const allowed: Dish[] = [];
