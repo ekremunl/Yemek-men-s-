@@ -22,7 +22,12 @@ export interface FoodItem {
   suggestedCompanions?: string[];
   /** Porsiyon başına kalori (kcal). Elle girilir. */
   calories?: number;
-  /** Yalnızca ana yemekler: hangi gruba ait (bakliyat, et, etli sebze, tavuk). Grubu olmayan ana yemek menüye otomatik alınmaz. */
+  /**
+   * Yalnızca ana yemekler: bu yemeğin YANINA gelmemesi gereken yemeklerin kimlikleri (ör. mantı → makarna).
+   * Aynı öğünde birlikte seçilmezler.
+   */
+  bannedCompanions?: string[];
+  /** Yalnızca ana yemekler: hangi gruba ait (bakliyat, et, etli sebze, tavuk, etsiz sebze/diğer). Grubu olmayan ana yemek menüye otomatik alınmaz. */
   group?: MainGroup;
   /**
    * (Kullanımdan kalktı) Yalnızca ana yemekler: bu yemek en az kaç gün arayla çıksın (ör. 14 = iki haftada bir).
@@ -49,15 +54,16 @@ export interface LinkedRecipe {
 }
 
 /** Ana yemek grupları: menü üretici bu gruplardan seçer ve günlere eşit dağıtır. */
-export type MainGroup = 'bakliyat' | 'et' | 'etli_sebze' | 'tavuk';
+export type MainGroup = 'bakliyat' | 'et' | 'etli_sebze' | 'tavuk' | 'diger';
 
-export const MAIN_GROUPS: MainGroup[] = ['bakliyat', 'et', 'etli_sebze', 'tavuk'];
+export const MAIN_GROUPS: MainGroup[] = ['bakliyat', 'et', 'etli_sebze', 'tavuk', 'diger'];
 
 export const MAIN_GROUP_LABEL: Record<MainGroup, string> = {
   bakliyat: 'Bakliyat yemekleri',
   et: 'Et yemekleri',
   etli_sebze: 'Etli sebze yemekleri',
   tavuk: 'Tavuk yemekleri',
+  diger: 'Etsiz sebze / diğer',
 };
 
 /**

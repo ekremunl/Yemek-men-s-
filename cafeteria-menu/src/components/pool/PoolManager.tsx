@@ -176,7 +176,7 @@ export default function PoolManager() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         {counts.map(({ g, n }) => (
           <div key={g} className={cn('rounded-xl border px-3 py-2', n === 0 ? 'border-red-400/40 bg-red-500/5' : 'border-white/10 bg-white/5')}>
             <p className="text-[11px] text-white/50">{MAIN_GROUP_LABEL[g]}</p>

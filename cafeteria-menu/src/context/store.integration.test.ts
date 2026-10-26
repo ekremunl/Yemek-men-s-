@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import type { FoodItem } from '@/types';
 import { SEED_DATA } from '@/lib/seedData';
-import { getAllMenuItemIds } from '@/lib/menu';
+import { companionConflicts, evaluateCandidates, getAllMenuItemIds } from '@/lib/menu';
 
 const STORAGE_KEY = 'cafeteria-menu-store';
 
@@ -50,13 +50,14 @@ async function main() {
 
   console.log('store entegrasyon testleri');
 
-  test('Migration (v4→v5): ana yemeklere grup atanır, eski etiket yasakları gruba çevrilir', () => {
+  test('Migration (v4→v6): ana yemeklere grup atanır (uymayanlar "diğer"), eski etiket yasakları gruba çevrilir', () => {
     const mains = state().foodItems.filter((i) => i.category === 'mainCourses');
     const kuruFasulye = mains.find((i) => i.name === 'Kuru Fasulye')!;
     const sote = mains.find((i) => i.name === 'Tavuk Sote')!;
     assert.equal(kuruFasulye.group, 'bakliyat');
     assert.equal(sote.group, 'tavuk');
-    assert.ok(mains.filter((i) => i.group).length >= 20);
+    assert.ok(mains.every((i) => i.group), 'tüm ana yemeklerin grubu olmalı');
+    assert.equal(mains.find((i) => i.name === 'Mantı')!.group, 'diger');
     assert.deepEqual(state().planSettings.dayBans['1'], ['g:tavuk']);
     assert.deepEqual(state().planSettings.weekendBans, ['g:bakliyat']);
   });
@@ -137,9 +138,30 @@ async function main() {
     useAppStore.setState({ foodItems: backup, generationError: null });
   });
 
-  test('persist: localStorage kaydı v5 ve planSettings içerir', () => {
+  test('Eşlikçi yasağı: kaydedilir, elle seçimde uyarı verir, yemek silinince temizlenir', () => {
+    const items = state().foodItems;
+    const manti = items.find((i) => i.name === 'Mantı')!;
+    const pasta = items.find((i) => i.category === 'sideDishes' && /makarna/i.test(i.name))!;
+    state().setBannedCompanions(manti.id, [pasta.id, manti.id]); // kendi kendini yasaklayamaz
+    assert.deepEqual(state().foodItems.find((i) => i.id === manti.id)!.bannedCompanions, [pasta.id]);
+
+    const date = '2026-11-20';
+    state().setMealCourse(date, 'lunch', 'mainCourse', manti.id);
+    const ev = evaluateCandidates(state().foodItems, state().menus, date, 'lunch', 'sideDish', state().planSettings);
+    assert.ok(ev.violations[pasta.id], 'makarna mantı yanında uyarı almalı');
+    state().setMealCourse(date, 'lunch', 'sideDish', pasta.id);
+    const byId = new Map(state().foodItems.map((i) => [i.id, i]));
+    assert.equal(companionConflicts(state().menus.find((m) => m.date === date), 'lunch', byId).length, 1);
+    // Diğer öğünde makarna serbest.
+    assert.equal(companionConflicts(state().menus.find((m) => m.date === date), 'dinner', byId).length, 0);
+
+    state().removeFoodItem(pasta.id);
+    assert.deepEqual(state().foodItems.find((i) => i.id === manti.id)!.bannedCompanions ?? [], []);
+  });
+
+  test('persist: localStorage kaydı v6 ve planSettings içerir', () => {
     const saved = JSON.parse(memory.get(STORAGE_KEY)!);
-    assert.equal(saved.version, 5);
+    assert.equal(saved.version, 6);
     assert.ok(saved.state.planSettings);
     assert.ok(Array.isArray(saved.state.foodItems));
   });

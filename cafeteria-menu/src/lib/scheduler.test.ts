@@ -24,7 +24,7 @@ weeks.forEach((days) => {
   if (days.length !== 7) return;
   full += 1;
   (['lunch', 'dinner'] as const).forEach((slot) => {
-    const c: Record<string, number> = { bakliyat: 0, et: 0, etli_sebze: 0, tavuk: 0 };
+    const c: Record<string, number> = { bakliyat: 0, et: 0, etli_sebze: 0, tavuk: 0, diger: 0 };
     days.forEach((m) => (c[groupOf(m[slot].mainCourse)] += 1));
     const v = Object.values(c);
     assert.ok(Math.max(...v) - Math.min(...v) <= 1, `${days[0].date} ${slot}: ${JSON.stringify(c)}`);
@@ -33,9 +33,9 @@ weeks.forEach((days) => {
 assert.ok(full >= 3);
 
 // 3) Gruplar aynı günde sabit kalmaz: her grup ay içinde en az 2 farklı haftanın günü.
-const lunchDows: Record<string, Set<number>> = { bakliyat: new Set(), et: new Set(), etli_sebze: new Set(), tavuk: new Set() };
+const lunchDows: Record<string, Set<number>> = { bakliyat: new Set(), et: new Set(), etli_sebze: new Set(), tavuk: new Set(), diger: new Set() };
 A.menus.forEach((m) => lunchDows[groupOf(m.lunch.mainCourse)].add(dow(m.date)));
-MAIN_GROUPS.forEach((g) => assert.ok(lunchDows[g].size >= 4, `${g} yalnızca ${lunchDows[g].size} farklı günde çıktı`));
+MAIN_GROUPS.forEach((g) => assert.ok(lunchDows[g].size >= 3, `${g} yalnızca ${lunchDows[g].size} farklı günde çıktı`));
 
 // 4) Aylar arası rotasyon: gruptaki diğer yemekler seçilmeden aynı yemek tekrar etmez.
 const B = scheduleMonth({ items: SEED_DATA, year: 2026, month: 11, existingMenus: A.menus, settings: DEFAULT_PLAN_SETTINGS, seed: 2 });
@@ -113,4 +113,33 @@ const noTavuk = SEED_DATA.map((i) => (i.group === 'tavuk' ? { ...i, group: undef
 const N = scheduleMonth({ items: noTavuk, year: 2026, month: 10, existingMenus: [], settings: DEFAULT_PLAN_SETTINGS, seed: 1 });
 assert.ok(N.warnings.some((w) => /Tavuk yemekleri/.test(w)));
 assert.ok(N.menus.every((m) => groupOf(m.lunch.mainCourse) !== 'tavuk'));
+
+// 8) Beşinci grup: etsiz sebze / diğer (balık, hamur işi…) menüye girer.
+assert.ok(SEED_DATA.some((i) => i.group === 'diger'));
+assert.ok(A.menus.some((m) => groupOf(m.lunch.mainCourse) === 'diger' || groupOf(m.dinner.mainCourse) === 'diger'));
+
+// 9) Eşlikçi yasağı: mantı yanında makarna/spagetti/erişte gelmez.
+{
+  const manti = SEED_DATA.find((i) => i.name === 'Mantı')!;
+  const pastas = SEED_DATA.filter((i) => i.category !== 'mainCourses' && /makarna|spagetti|erişte|şehriye/i.test(i.name));
+  assert.ok(pastas.length >= 2, 'örnek havuzda makarna türü yan yemek olmalı');
+  const pool = SEED_DATA.map((i) => (i.id === manti.id ? { ...i, bannedCompanions: pastas.map((p) => p.id) } : i));
+  const banned = new Set(pastas.map((p) => p.id));
+  let mantiMeals = 0;
+  for (const seed of [1, 2, 3, 4, 5, 6]) {
+    for (const month of [9, 10, 11]) {
+      const R = scheduleMonth({ items: pool, year: 2026, month, existingMenus: [], settings: DEFAULT_PLAN_SETTINGS, seed });
+      assert.ok(!R.warnings.some((w) => /yanına gelmesin/.test(w)), 'havuz yeterli: yasak yok sayılmamalı');
+      R.menus.forEach((m) =>
+        (['lunch', 'dinner'] as const).forEach((slot) => {
+          if (m[slot].mainCourse !== manti.id) return;
+          mantiMeals += 1;
+          [m[slot].soup, m[slot].sideDish, m[slot].complement].forEach((id) => assert.ok(!id || !banned.has(id), `${m.date} ${slot}: mantı yanında ${byId.get(id!)?.name}`));
+        }),
+      );
+    }
+  }
+  assert.ok(mantiMeals >= 3, 'mantı en az birkaç kez seçilmeli');
+}
+
 console.log('zamanlayıcı testleri geçti');

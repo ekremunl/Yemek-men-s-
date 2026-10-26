@@ -7,6 +7,7 @@ import { MAIN_GROUPS, MAIN_GROUP_LABEL, type CategoryKey, type FoodItem, type Ma
 import { matchRecipes } from '@/lib/mutfak';
 import { cn } from '@/lib/utils';
 import ItemPicker from '@/components/ui/ItemPicker';
+import CompanionBanSheet from './CompanionBanSheet';
 
 /** Yemeğin ayrıntıları: (ana yemekte) grup, kalori ve reçete bağlantısı. Değişiklikler anında kaydedilir. */
 export default function ItemDetails({ item }: { item: FoodItem }) {
@@ -16,6 +17,10 @@ export default function ItemDetails({ item }: { item: FoodItem }) {
   const recipes = useAppStore((s) => s.recipes);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const [kcal, setKcal] = useState(item.calories ? String(item.calories) : '');
+  const [banOpen, setBanOpen] = useState(false);
+  const foodItems = useAppStore((s) => s.foodItems);
+  const setBannedCompanions = useAppStore((s) => s.setBannedCompanions);
+  const bannedNames = (item.bannedCompanions ?? []).map((id) => ({ id, name: foodItems.find((f) => f.id === id)?.name ?? 'silinmiş yemek' }));
 
   const recipeList = useMemo(() => Object.values(recipes).sort((a, b) => a.name.localeCompare(b.name, 'tr')), [recipes]);
   const linked = item.recipeId ? recipes[item.recipeId] : undefined;
@@ -62,6 +67,26 @@ export default function ItemDetails({ item }: { item: FoodItem }) {
             </button>
           </div>
           {!item.group && <p className="mt-1 text-[11px] text-amber-300/80">Grupsuz yemek menüye otomatik alınmaz.</p>}
+        </div>
+      )}
+
+      {item.category === 'mainCourses' && (
+        <div>
+          <p className="text-[11px] font-medium text-white/50 mb-1.5">Yanında olmasın (aynı öğünde birlikte gelmez)</p>
+          {bannedNames.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {bannedNames.map((b) => (
+                <span key={b.id} className="inline-flex items-center gap-1 rounded-full border border-red-400/30 bg-red-500/15 pl-3 pr-1 text-xs text-red-200">
+                  {b.name}
+                  <button type="button" aria-label={`${b.name} yasağını kaldır`} onClick={() => setBannedCompanions(item.id, (item.bannedCompanions ?? []).filter((x) => x !== b.id))} className="w-8 h-8 flex items-center justify-center opacity-70">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <button type="button" onClick={() => setBanOpen(true)} className="min-h-[2.75rem] px-4 rounded-xl border border-white/10 bg-white/5 text-xs font-medium text-white/80 active:bg-white/10">
+            {bannedNames.length ? 'Yasak listesini düzenle' : '+ Yasak ekle (ör. makarna)'}
+          </button>
+          <CompanionBanSheet main={item} open={banOpen} onClose={() => setBanOpen(false)} />
         </div>
       )}
 

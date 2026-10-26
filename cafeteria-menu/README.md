@@ -6,7 +6,7 @@ Veriler yalnızca cihazın tarayıcısında (`localStorage`) saklanır; sunucu y
 
 ## Sekmeler
 - **Plan:** aylık otomatik menü, hafta görünümü (kaydır), gün kilitleme, haftayı yenile, tek yemek için öneri (🔄), kalori, PDF/Excel dışa aktarma (↓), "Tekrar özeti"
-- **Havuz:** yemek havuzu. **Ana yemekler dört gruba ayrılır:** bakliyat, et, etli sebze, tavuk. Kalori ve reçete bağlantısı da buradan.
+- **Havuz:** yemek havuzu. **Ana yemekler beş gruba ayrılır:** bakliyat, et, etli sebze, tavuk, etsiz sebze / diğer. Kalori, reçete bağlantısı ve **"yanında olmasın"** (eşlikçi yasağı, ör. mantı ↔ makarna) da buradan.
 - **Mutfak:** *Günlük* · *Rapor* (otomatik malzeme hesabı, PDF) · *Reçeteler*
 - **Sipariş:** ürün gir ya da menüden sipariş hesapla, kopyala/paylaş
 - **Ayarlar:** **Yasaklar** (gün yasakları + hafta sonu yasaklı yemekler), eski uygulamalardan veri alma, yedek/geri yükle, uygulamayı kur
@@ -18,7 +18,8 @@ Veriler yalnızca cihazın tarayıcısında (`localStorage`) saklanır; sunucu y
    aynı yemek tekrar etmez. Çorba, yan yemek, tamamlayıcı ve ara öğün de kendi kategorisinde aynı şekilde döner.
 3. Tek kural **yasaklardır**: günlere göre (ör. Pazartesi tavuk yok) ve hafta sonu için. Bir grubu yasaklayıp bazı yemekleri
    **istisna** olarak serbest bırakabilirsiniz (ör. tavuk yasak, hazır paketli tavuk serbest).
-Etiketler, eşlikçiler ve diğer kurallar kaldırıldı. Grubu seçilmemiş ana yemek menüye otomatik alınmaz.
+3b. **Eşlikçi yasağı:** bir ana yemeğin yanına gelmemesi gereken çorba / yan yemek / tamamlayıcılar seçilir; aynı öğünde birlikte çıkmazlar (elle seçerken uyarı verir).
+Etiketler ve diğer kurallar kaldırıldı. Grubu seçilmemiş ana yemek menüye otomatik alınmaz.
 
 ## Nasıl birleşiyor?
 Havuzdaki bir yemeğe reçete bağlanınca: o günün **Mutfak raporu** menüden otomatik hesaplanır (kişi sayısı × 1 kişilik miktar),
