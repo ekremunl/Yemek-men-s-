@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { DatabaseBackup, Download, Upload, Share2 } from 'lucide-react';
 import { useAppStore } from '@/context/store';
-import { DailyMenu, FoodItem, KitchenDay, LinkedRecipe, OrderItem, PersonCounts, RuleSettings } from '@/types';
+import { DailyMenu, FoodItem, KitchenDay, LinkedRecipe, OrderItem, PersonCounts, PlanSettings } from '@/types';
 
 const BACKUP_APP = 'yemekhane-menu-planlayici';
 const BACKUP_FORMAT = 1;
@@ -20,7 +20,7 @@ interface BackupFile {
     // Sonradan eklenen alanlar (eski yedeklerde yok).
     recipes?: Record<string, LinkedRecipe>;
     lockedDates?: string[];
-    ruleSettings?: RuleSettings;
+    planSettings?: PlanSettings;
     persons?: PersonCounts;
     kitchenDays?: Record<string, KitchenDay>;
     orderItems?: OrderItem[];
@@ -63,12 +63,12 @@ export default function BackupPanel() {
     typeof File !== 'undefined';
 
   const createBackupFile = (): File => {
-    const { foodItems, menus, currentYear, currentMonth, recipes, lockedDates, ruleSettings, persons, kitchenDays, orderItems, orderPool } = useAppStore.getState();
+    const { foodItems, menus, currentYear, currentMonth, recipes, lockedDates, planSettings, persons, kitchenDays, orderItems, orderPool } = useAppStore.getState();
     const backup: BackupFile = {
       app: BACKUP_APP,
       format: BACKUP_FORMAT,
       exportedAt: new Date().toISOString(),
-      data: { foodItems, menus, currentYear, currentMonth, recipes, lockedDates, ruleSettings, persons, kitchenDays, orderItems, orderPool },
+      data: { foodItems, menus, currentYear, currentMonth, recipes, lockedDates, planSettings, persons, kitchenDays, orderItems, orderPool },
     };
     return new File([JSON.stringify(backup, null, 2)], buildFileName(), { type: 'application/json' });
   };
@@ -129,7 +129,7 @@ export default function BackupPanel() {
         currentMonth: incoming.currentMonth,
         ...(incoming.recipes ? { recipes: incoming.recipes } : {}),
         ...(incoming.lockedDates ? { lockedDates: incoming.lockedDates } : {}),
-        ...(incoming.ruleSettings ? { ruleSettings: incoming.ruleSettings } : {}),
+        ...(incoming.planSettings ? { planSettings: incoming.planSettings } : {}),
         ...(incoming.persons ? { persons: incoming.persons } : {}),
         ...(incoming.kitchenDays ? { kitchenDays: incoming.kitchenDays } : {}),
         ...(incoming.orderItems ? { orderItems: incoming.orderItems } : {}),

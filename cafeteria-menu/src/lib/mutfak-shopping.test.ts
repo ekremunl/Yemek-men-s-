@@ -72,7 +72,7 @@ assert.throws(() => parseMutfakBackup('{"foo":1}'));
 assert.equal(parseMutfakBackup(JSON.stringify({ recipes: [recipes.r1], days: {} })).recipes.length, 1);
 
 // Tek yemek değiştirme: öneriler kurallara uyar, mevcut seçim hariç
-const ev = evaluateCandidates(SEED_DATA, [], '2026-11-04', 'lunch', 'mainCourse');
+const ev = evaluateCandidates(SEED_DATA, [], '2026-11-04', 'lunch', 'mainCourse', { dayBans: {}, weekendBans: [] });
 assert.ok(ev.ranked.length > 0);
 assert.ok(ev.ranked.every((id) => SEED_DATA.find((f) => f.id === id)!.category === 'mainCourses'));
 console.log('mutfak/shopping testleri geçti');

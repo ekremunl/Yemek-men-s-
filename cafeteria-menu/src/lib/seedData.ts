@@ -1,5 +1,6 @@
 // src/lib/seedData.ts
 import { FoodItem, CategoryMeta } from '@/types';
+import { inferMainGroup } from '@/lib/groups';
 
 export const CATEGORY_META: CategoryMeta[] = [
   {
@@ -44,7 +45,7 @@ export const CATEGORY_META: CategoryMeta[] = [
   },
 ];
 
-export const SEED_DATA: FoodItem[] = [
+const RAW_SEED_DATA: FoodItem[] = [
   // Soups
   { id: 's1', name: 'Mercimek Çorbası', category: 'soups', tags: ['legume'] },
   { id: 's2', name: 'Tarhana Çorbası', category: 'soups', tags: ['traditional'] },
@@ -128,3 +129,10 @@ export const SEED_DATA: FoodItem[] = [
   { id: 'sn5', name: 'Meyve', category: 'snacks', tags: ['fruit'] },
   { id: 'sn6', name: 'Gözleme', category: 'snacks', tags: ['traditional'] },
 ];
+
+/** Varsayılan havuz: ana yemeklere başlangıç grubu atanmıştır (kullanıcı Havuz'dan değiştirebilir). */
+export const SEED_DATA: FoodItem[] = RAW_SEED_DATA.map((item) => {
+  if (item.category !== 'mainCourses') return item;
+  const group = inferMainGroup(item);
+  return group ? { ...item, group } : item;
+});

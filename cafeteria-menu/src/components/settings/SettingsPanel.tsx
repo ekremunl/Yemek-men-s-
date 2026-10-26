@@ -3,7 +3,7 @@
 import { Smartphone } from 'lucide-react';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import BackupPanel from '@/components/export/BackupPanel';
-import RuleSettingsPanel from './RuleSettingsPanel';
+import BanPanel from './BanPanel';
 import ImportPanel from './ImportPanel';
 
 export default function SettingsPanel() {
@@ -13,7 +13,7 @@ export default function SettingsPanel() {
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-bold text-white">Ayarlar & Bağlantı</h2>
-        <p className="text-sm text-white/50 mt-1">Menü kuralları, eski uygulamalardan veri alma, yedekleme</p>
+        <p className="text-sm text-white/50 mt-1">Yasaklar, eski uygulamalardan veri alma, yedekleme</p>
       </div>
 
       <section className="rounded-2xl bg-white/5 border border-white/10 p-5 space-y-3">
@@ -34,7 +34,7 @@ export default function SettingsPanel() {
         )}
       </section>
 
-      <RuleSettingsPanel />
+      <BanPanel />
       <ImportPanel />
       <BackupPanel />
     </div>

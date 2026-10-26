@@ -6,15 +6,12 @@ import { useAppStore } from '@/context/store';
 import { CATEGORY_META } from '@/lib/seedData';
 import { analyzeRepeats } from '@/lib/repeats';
 import { cn, getMonthMenus, MONTH_NAMES_TR } from '@/lib/utils';
-import RepeatGapPicker from '@/components/ui/RepeatGapPicker';
 
 /** "Tekrar özeti": ay içinde en çok tekrar eden yemekler ve havuzun yeterliliği. */
 export default function RepeatSummary() {
-  const { menus, foodItems, currentYear, currentMonth, setActiveTab, setRepeatGap, defaultGap } = useAppStore((s) => ({
+  const { menus, foodItems, currentYear, currentMonth, setActiveTab } = useAppStore((s) => ({
     menus: s.menus, foodItems: s.foodItems, currentYear: s.currentYear, currentMonth: s.currentMonth, setActiveTab: s.setActiveTab,
-    setRepeatGap: s.setRepeatGap, defaultGap: s.ruleSettings.mainCooldownDays + 1,
   }));
-  const [gapFor, setGapFor] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
   const report = useMemo(() => analyzeRepeats(menus, foodItems, currentYear, currentMonth), [menus, foodItems, currentYear, currentMonth]);
@@ -24,7 +21,6 @@ export default function RepeatSummary() {
   // Ana yemekte 2. tekrar zaten "kaç günde bir" sorusunu doğurur; diğer kategorilerde 3 ve üstü gösterilir.
   const repeated = report.dishes.filter((d) => d.count >= (d.category === 'mainCourses' ? 2 : 3));
   const top = report.dishes[0];
-  const itemOf = (id: string) => foodItems.find((f) => f.id === id);
   const label = (key: string) => CATEGORY_META.find((c) => c.key === key)?.labelTR ?? key;
 
   return (
@@ -49,25 +45,9 @@ export default function RepeatSummary() {
             ) : (
               <ul className="space-y-1">
                 {repeated.slice(0, 12).map((d) => (
-                  <li key={d.id} className="bg-white/5 rounded-lg px-3 py-2">
-                    <div className="flex items-center justify-between gap-2 text-sm">
-                      <span className="min-w-0 truncate text-white/85">{d.name} <span className="text-[11px] text-white/35">· {label(d.category)}</span></span>
-                      <span className="flex items-center gap-2 shrink-0">
-                        <span className="font-bold tabular-nums text-amber-300">{d.count}×</span>
-                        {d.category === 'mainCourses' && (
-                          <button type="button" onClick={() => setGapFor(gapFor === d.id ? null : d.id)} aria-expanded={gapFor === d.id}
-                            className="min-h-[2.25rem] px-2.5 rounded-lg border border-indigo-400/30 text-[11px] font-medium text-indigo-300 active:bg-indigo-500/10">
-                            {itemOf(d.id)?.repeatGapDays ? `${itemOf(d.id)!.repeatGapDays} günde bir` : 'Aralık'}
-                          </button>
-                        )}
-                      </span>
-                    </div>
-                    {gapFor === d.id && (
-                      <div className="mt-2 pt-2 border-t border-white/10">
-                        <p className="text-[11px] text-white/45 mb-1.5">En az kaç gün arayla çıksın? (yeni menü üretiminde geçerli)</p>
-                        <RepeatGapPicker value={itemOf(d.id)?.repeatGapDays} defaultGap={defaultGap} onChange={(n) => setRepeatGap(d.id, n)} />
-                      </div>
-                    )}
+                  <li key={d.id} className="flex items-center justify-between gap-2 text-sm bg-white/5 rounded-lg px-3 py-2">
+                    <span className="min-w-0 truncate text-white/85">{d.name} <span className="text-[11px] text-white/35">· {label(d.category)}</span></span>
+                    <span className="font-bold tabular-nums text-amber-300 shrink-0">{d.count}×</span>
                   </li>
                 ))}
               </ul>

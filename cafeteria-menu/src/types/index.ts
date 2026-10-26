@@ -22,8 +22,10 @@ export interface FoodItem {
   suggestedCompanions?: string[];
   /** Porsiyon başına kalori (kcal). Elle girilir. */
   calories?: number;
+  /** Yalnızca ana yemekler: hangi gruba ait (bakliyat, et, etli sebze, tavuk). Grubu olmayan ana yemek menüye otomatik alınmaz. */
+  group?: MainGroup;
   /**
-   * Yalnızca ana yemekler: bu yemek en az kaç gün arayla çıksın (ör. 14 = iki haftada bir).
+   * (Kullanımdan kalktı) Yalnızca ana yemekler: bu yemek en az kaç gün arayla çıksın (ör. 14 = iki haftada bir).
    * Boşsa genel ana yemek aralığı (Ayarlar → Menü Kuralları) geçerlidir.
    */
   repeatGapDays?: number;
@@ -46,39 +48,35 @@ export interface LinkedRecipe {
   ings: RecipeIngredient[];
 }
 
-/** Menü üretici kural ayarları (arayüzden değiştirilebilir). */
-export interface RuleSettings {
-  /** Aynı ana yemek kaç gün tekrar edemez. */
-  mainCooldownDays: number;
-  /** Aynı protein en fazla kaç gün üst üste. */
-  maxConsecutiveProteinDays: number;
-  /** Hafta sonu akşam çorba/yan/tamamlayıcı öğleyle aynı olsun. */
-  weekendSync: boolean;
-  /** Ana yemeğin eşlikçi listesi zorunlu olsun. */
-  requireCompanions: boolean;
-  /**
-   * Haftanın günlerine göre yasaklı etiketler. Anahtar: 0 = Pazar … 6 = Cumartesi.
-   * Ör. { "1": ["tavuk"] } → Pazartesi günleri tavuklu yemek çıkmaz. Eski kayıtlarda alan olmayabilir.
-   */
-  weekdayBans?: Record<string, string[]>;
-  /** Adil dağıtım: bir yemek ayda ortalamanın çok üstünde çıkmasın. Varsayılan kapalı. */
-  fairRotation?: boolean;
-  /** Adil paydan kaç fazla tekrara izin verilsin (0 = tam eşit dağıtım). */
-  rotationSlack?: number;
-  /** Çorba / yan yemek / tamamlayıcı için bekleme süresi (gün); 0 = kapalı. */
-  sideCooldownDays?: number;
+/** Ana yemek grupları: menü üretici bu gruplardan seçer ve günlere eşit dağıtır. */
+export type MainGroup = 'bakliyat' | 'et' | 'etli_sebze' | 'tavuk';
+
+export const MAIN_GROUPS: MainGroup[] = ['bakliyat', 'et', 'etli_sebze', 'tavuk'];
+
+export const MAIN_GROUP_LABEL: Record<MainGroup, string> = {
+  bakliyat: 'Bakliyat yemekleri',
+  et: 'Et yemekleri',
+  etli_sebze: 'Etli sebze yemekleri',
+  tavuk: 'Tavuk yemekleri',
+};
+
+/**
+ * Yasak listesi öğesi:
+ *  - "g:<grup>"       o grubun tüm ana yemekleri yasak
+ *  - "d:<yemekKimliği>" tek yemek yasak
+ *  - "a:<yemekKimliği>" istisna: grup yasağı olsa bile bu yemek serbest (ör. tavuk grubu yasak, paketli tavuk serbest)
+ */
+export type BanEntry = string;
+
+/** Gün yasakları ve hafta sonu yasaklı yemekler. */
+export interface PlanSettings {
+  /** Pazartesi–Cuma yasakları. Anahtar: JS getDay() ("1" = Pazartesi … "5" = Cuma). */
+  dayBans: Record<string, BanEntry[]>;
+  /** Cumartesi ve Pazar için ortak yasaklı yemekler / gruplar. */
+  weekendBans: BanEntry[];
 }
 
-export const DEFAULT_RULE_SETTINGS: RuleSettings = {
-  mainCooldownDays: 5,
-  maxConsecutiveProteinDays: 2,
-  weekendSync: true,
-  requireCompanions: true,
-  weekdayBans: {},
-  fairRotation: false,
-  rotationSlack: 1,
-  sideCooldownDays: 0,
-};
+export const DEFAULT_PLAN_SETTINGS: PlanSettings = { dayBans: {}, weekendBans: [] };
 
 /** Malzeme / üretim listesi için kişi sayıları. */
 export interface PersonCounts {
