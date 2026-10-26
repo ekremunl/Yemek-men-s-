@@ -7,8 +7,8 @@ const POULTRY = /tavuk|piliç|hindi/;
 const BEEF = /\bet\b|etli|kıyma|kıymalı|köfte|kebab|kebap|sote|biftek|kavurma|haşlama|dana|kuzu|tandır|güveç|musakka|dolma|sarma|karnıyarık|izmir köfte|hünkar/;
 const VEG = /sebze|türlü|kabak|patlıcan|ıspanak|ispanak|taze fasulye|bamya|karnabahar|kapuska|lahana|pırasa|bezelye|enginar|semizotu|biber|domates/;
 
-/** Etiket varsa etikete, yoksa ada bakarak grup önerir. Hiçbirine uymazsa (balık, hamur işi…) undefined. */
-export function inferMainGroup(item: Pick<FoodItem, 'name' | 'tags'>): MainGroup | undefined {
+/** Etiket varsa etikete, yoksa ada bakarak grup önerir. Hiçbirine uymayanlar (etsiz sebze, balık, hamur işi…) "diger" olur. */
+export function inferMainGroup(item: Pick<FoodItem, 'name' | 'tags'>): MainGroup {
   const tags = item.tags ?? [];
   const name = item.name.toLocaleLowerCase('tr-TR');
   const has = (t: string) => tags.includes(t);
@@ -18,5 +18,5 @@ export function inferMainGroup(item: Pick<FoodItem, 'name' | 'tags'>): MainGroup
   if (!tags.length && /etli/.test(name) && VEG.test(name)) return 'etli_sebze';
   if (has('beef') && !has('dough')) return 'et';
   if (!tags.length && BEEF.test(name) && !/pide|börek|mantı|lahmacun|hamburger/.test(name)) return 'et';
-  return undefined;
+  return 'diger';
 }

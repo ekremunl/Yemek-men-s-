@@ -198,7 +198,7 @@ function planWeekSlot(days: string[], slot: Slot, ctx: PlanContext, lunchOf: Map
   if (best) return best;
 
   // Eşit dağılım mümkün değil (yasaklar yüzünden): gün gün, en az kullanılan uygun gruptan seç.
-  const local: Record<MainGroup, number> = { bakliyat: 0, et: 0, etli_sebze: 0, tavuk: 0 };
+  const local = Object.fromEntries(MAIN_GROUPS.map((g) => [g, 0])) as Record<MainGroup, number>;
   return days.map((date) => {
     const options = shuffled(groups, ctx.rng)
       .filter((g) => ctx.available(date, g) && (slot === 'lunch' || lunchOf.get(date) !== g))
@@ -281,7 +281,7 @@ export function scheduleMonth(input: ScheduleInput): ScheduleResult {
 
   // --- Haftalık grup planı -----------------------------------------------------
   const plan: GroupPlan = new Map();
-  const groupCount: Record<MainGroup, number> = { bakliyat: 0, et: 0, etli_sebze: 0, tavuk: 0 };
+  const groupCount = Object.fromEntries(MAIN_GROUPS.map((g) => [g, 0])) as Record<MainGroup, number>;
   const weeks = new Map<string, string[]>();
   monthDates.forEach((date) => {
     if (frozen.has(date)) return;
@@ -344,6 +344,7 @@ export function scheduleMonth(input: ScheduleInput): ScheduleResult {
 
   // --- Yemek seçimi (gün gün) --------------------------------------------------
   let banRelaxed = 0;
+  let companionRelaxed = 0;
   const outMenus: DailyMenu[] = [];
 
   monthDates.forEach((date) => {
@@ -358,28 +359,39 @@ export function scheduleMonth(input: ScheduleInput): ScheduleResult {
     const menu = emptyMenu(date);
     const usedToday = new Set<string>();
 
-    const choose = (candidates: FoodItem[]): FoodItem | undefined => {
+    /** `blocked`: bu öğünün ana yemeğinin yanına gelmesi istenmeyen yemekler. */
+    const choose = (candidates: FoodItem[], blocked?: Set<string>): FoodItem | undefined => {
       const free = candidates.filter((i) => !usedToday.has(i.id));
-      const allowed = free.filter((i) => !banReason(i, date, settings));
+      const fitting = blocked && blocked.size ? free.filter((i) => !blocked.has(i.id)) : free;
+      const allowed = fitting.filter((i) => !banReason(i, date, settings));
       const spaced = allowed.filter((i) => !nearKept(i.id, date));
       const hit = rotation.pick(spaced.length ? spaced : allowed);
       if (hit) return hit;
-      const relaxed = rotation.pick(free); // her şey yasaksa: yasağı yok say
+      // Her aday yasak ya da eşlikçi yasağındaysa: önce yalnızca gün yasağına uy, olmazsa hepsini yok say.
+      const noCompanion = free.filter((i) => !banReason(i, date, settings));
+      const second = rotation.pick(noCompanion);
+      if (second) {
+        companionRelaxed += 1;
+        return second;
+      }
+      const relaxed = rotation.pick(free);
       if (relaxed) banRelaxed += 1;
       return relaxed;
     };
 
     SLOTS.forEach((slot) => {
-      COURSES.forEach(([field, cat]) => {
-        let chosen: FoodItem | undefined;
-        if (field === 'mainCourse') {
-          const g = plan.get(`${date}|${slot}`);
-          const own = g ? mainsByGroup(g) : [];
-          const anyGrouped = items.filter((i) => i.category === 'mainCourses' && i.group);
-          chosen = choose(own) ?? choose(anyGrouped);
-        } else {
-          chosen = choose(pool(cat));
-        }
+      // Önce ana yemek (yanına gelmeyecek yemekler buna göre belirlenir), sonra diğer kurslar.
+      const g = plan.get(`${date}|${slot}`);
+      const anyGrouped = items.filter((i) => i.category === 'mainCourses' && i.group);
+      const main = choose(g ? mainsByGroup(g) : []) ?? choose(anyGrouped);
+      const blocked = new Set(main?.bannedCompanions ?? []);
+      if (main) {
+        menu[slot].mainCourse = main.id;
+        usedToday.add(main.id);
+        rotation.mark(main.id, date);
+      }
+      COURSES.filter(([field]) => field !== 'mainCourse').forEach(([field, cat]) => {
+        const chosen = choose(pool(cat), blocked);
         if (chosen) {
           menu[slot][field] = chosen.id;
           usedToday.add(chosen.id);
@@ -395,6 +407,7 @@ export function scheduleMonth(input: ScheduleInput): ScheduleResult {
     outMenus.push(menu);
   });
 
+  if (companionRelaxed > 0) warnings.push(`${companionRelaxed} yemek yerinde "yanına gelmesin" yasağına uyacak aday kalmadı; yasak yok sayıldı. Havuzda ilgili kategoride daha fazla yemek olsun.`);
   if (banRelaxed > 0) warnings.push(`${banRelaxed} yemek yeri için tüm adaylar yasaklıydı; yasak yok sayıldı. Yasak listelerini ya da havuzu gözden geçirin.`);
   return { menus: outMenus, warnings, seed };
 }

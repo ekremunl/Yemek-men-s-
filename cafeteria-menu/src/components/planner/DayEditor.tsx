@@ -24,6 +24,7 @@ import {
   CATEGORY_TO_COURSE_FIELD,
   COURSE_LABELS_TR,
   evaluateCandidates,
+  companionConflicts,
   MAIN_MEAL_KEYS,
   MEAL_LABELS_TR,
   MEAL_COURSE_FIELDS,
@@ -155,6 +156,7 @@ export default function DayEditor({ date: initialDate, onClose }: Props) {
   const renderMainMealFields = (mealKey: MainMealKey) => {
     const meal = menu?.[mealKey];
     const conflicts = mealConflicts[mealKey];
+    const companionClashes = companionConflicts(menu, mealKey, itemById);
 
     return (
       <div className="space-y-4">
@@ -216,6 +218,15 @@ export default function DayEditor({ date: initialDate, onClose }: Props) {
                   {selected ? <RefreshCw className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
                 </button>
               </div>
+              {field === 'mainCourse' && companionClashes.length > 0 && (
+                <div className="mt-1.5 flex items-start gap-1.5 px-3 py-2 bg-red-500/10 border border-red-400/30 rounded-lg">
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-300 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-200/90">
+                    {itemById.get(companionClashes[0].mainId)?.name} yanında{' '}
+                    {companionClashes.map((c) => itemById.get(c.itemId)?.name).join(', ')} istenmiyor (Havuz → ana yemek → "Yanında olmasın").
+                  </p>
+                </div>
+              )}
               {isMainConflict && (
                 <div className="mt-1.5 flex items-start gap-1.5 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />

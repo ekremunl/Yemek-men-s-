@@ -151,6 +151,21 @@ export function generateAutoMonthMenus(
   return scheduleMonth({ items, year, month, existingMenus, settings, frozenDates, seed });
 }
 
+/** Bir öğündeki ana yemek ile yanındaki yemekler arasında "yanına gelmesin" çakışmaları. */
+export function companionConflicts(
+  menu: DailyMenu | undefined,
+  mealKey: MainMealKey,
+  itemById: Map<string, FoodItem>
+): { mainId: string; itemId: string }[] {
+  const meal = menu?.[mealKey];
+  const main = meal?.mainCourse ? itemById.get(meal.mainCourse) : undefined;
+  if (!meal || !main?.bannedCompanions?.length) return [];
+  return MEAL_COURSE_FIELDS.filter((f) => f !== 'mainCourse')
+    .map((f) => meal[f])
+    .filter((id): id is string => Boolean(id) && main.bannedCompanions!.includes(id as string))
+    .map((itemId) => ({ mainId: main.id, itemId }));
+}
+
 // ---------------------------------------------------------------------------
 // TEK YEMEK DEĞİŞTİRME / UYGUNLUK
 // ---------------------------------------------------------------------------
@@ -191,11 +206,26 @@ export function evaluateCandidates(
     );
   }
 
+  // Aynı öğündeki diğer yemekler: "yanına gelmesin" yasakları için.
+  const meal = today?.[mealKey];
+  const mealMain = meal?.mainCourse ? byId.get(meal.mainCourse) : undefined;
+  const mealOthers = meal
+    ? MEAL_COURSE_FIELDS.filter((f) => f !== field && f !== 'mainCourse').map((f) => meal[f]).filter((id): id is string => Boolean(id))
+    : [];
+
   const violations: Record<string, string> = {};
   pool.forEach((item) => {
     const reason = banReason(item, date, settings);
-    if (reason) violations[item.id] = reason.charAt(0).toLocaleUpperCase('tr-TR') + reason.slice(1);
-    else if (usedToday.has(item.id)) violations[item.id] = 'Aynı gün başka bir öğünde zaten var';
+    if (reason) {
+      violations[item.id] = reason.charAt(0).toLocaleUpperCase('tr-TR') + reason.slice(1);
+    } else if (usedToday.has(item.id)) {
+      violations[item.id] = 'Aynı gün başka bir öğünde zaten var';
+    } else if (field !== 'mainCourse' && mealMain?.bannedCompanions?.includes(item.id)) {
+      violations[item.id] = `${mealMain.name} yanında istenmiyor`;
+    } else if (field === 'mainCourse') {
+      const clash = (item.bannedCompanions ?? []).find((id) => mealOthers.includes(id));
+      if (clash) violations[item.id] = `Bu öğündeki "${byId.get(clash)?.name ?? 'yemek'}" ile birlikte olmaz`;
+    }
   });
 
   // Her yemeğin hedef tarihe en yakın kullanım uzaklığı (gün). Uzak = önce.

@@ -48,6 +48,8 @@ interface AppState {
   removeFoodItem: (id: string) => void;
   /** Ana yemeğin grubunu değiştirir (undefined = grupsuz: menüye otomatik alınmaz). */
   setMainGroup: (id: string, group: MainGroup | undefined) => void;
+  /** Ana yemeğin yanına gelmemesi gereken yemekler (ör. mantı → makarna). */
+  setBannedCompanions: (id: string, ids: string[]) => void;
   /** Porsiyon kalorisi (kcal); null/0 temizler. */
   setCalories: (id: string, kcal: number | null) => void;
   /** Mutfaktakip reçetesine bağlar (null = bağı kaldırır). */
@@ -256,6 +258,17 @@ export const useAppStore = create<AppState>()(
         get().addToast({ type: 'success', title: 'Eklendi', message: `"${trimmed}" başarıyla eklendi.` });
       },
 
+      setBannedCompanions: (id, ids) =>
+        set((state) => ({
+          foodItems: state.foodItems.map((item) => {
+            if (item.id !== id || item.category !== 'mainCourses') return item;
+            const { bannedCompanions: _old, ...rest } = item;
+            void _old;
+            const unique = Array.from(new Set(ids.filter((x) => x !== id)));
+            return unique.length ? { ...rest, bannedCompanions: unique } : rest;
+          }),
+        })),
+
       setMainGroup: (id, group) =>
         set((state) => ({
           foodItems: state.foodItems.map((item) => {
@@ -403,7 +416,9 @@ export const useAppStore = create<AppState>()(
         const targetIndex = before.foodItems.findIndex((f) => f.id === id);
         // Also clear from menus
         set((state) => ({
-          foodItems: state.foodItems.filter((f) => f.id !== id),
+          foodItems: state.foodItems
+            .filter((f) => f.id !== id)
+            .map((f) => (f.bannedCompanions?.includes(id) ? { ...f, bannedCompanions: f.bannedCompanions.filter((x) => x !== id) } : f)),
           // Silinen yemeği yasak listelerinden de çıkar (boşta kalan kimlik kalmasın).
           planSettings: {
             dayBans: Object.fromEntries(Object.entries(state.planSettings.dayBans).map(([k, v]) => [k, v.filter((e) => e !== `d:${id}`)])),
@@ -446,8 +461,8 @@ export const useAppStore = create<AppState>()(
                 restored.splice(Math.min(targetIndex, restored.length), 0, target);
                 const withCompanions = restored.map((f) => {
                   const was = before.foodItems.find((b) => b.id === f.id);
-                  return was?.suggestedCompanions?.includes(id) && !f.suggestedCompanions?.includes(id)
-                    ? { ...f, suggestedCompanions: [...(f.suggestedCompanions ?? []), id] }
+                  return was?.bannedCompanions?.includes(id) && !f.bannedCompanions?.includes(id)
+                    ? { ...f, bannedCompanions: [...(f.bannedCompanions ?? []), id] }
                     : f;
                 });
                 const byDate = new Map(state.menus.map((m) => [m.date, normalizeMenu(m)]));
@@ -706,7 +721,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'cafeteria-menu-store',
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => (typeof window !== 'undefined' ? localStorage : { getItem: () => null, setItem: () => {}, removeItem: () => {} })),
       migrate: (persistedState: unknown) => {
         if (!persistedState || typeof persistedState !== 'object') return persistedState;
