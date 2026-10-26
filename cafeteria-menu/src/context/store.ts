@@ -4,22 +4,18 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import {
   FoodItem, DailyMenu, CategoryKey, ConflictWarning, PlannerMealKey, MealCourseField, FourCourseMeal, MainMealKey,
-  LinkedRecipe, RuleSettings, DEFAULT_RULE_SETTINGS, PersonCounts, ActiveTab, KitchenDay, OrderItem,
+  LinkedRecipe, PlanSettings, DEFAULT_PLAN_SETTINGS, PersonCounts, ActiveTab, KitchenDay, OrderItem, MainGroup,
 } from '@/types';
+import { inferMainGroup } from '@/lib/groups';
 import { emptyKitchenDay, normalizeKitchenDay } from '@/lib/kitchen';
 import { SEED_DATA } from '@/lib/seedData';
-import { isTagAllowedForCategory } from '@/lib/tags';
 import { generateId, isSameWeek, MONTH_NAMES_TR, parseDate } from '@/lib/utils';
 import {
   createEmptyDailyMenu,
   createEmptyFourCourseMeal,
-  formatMenuGenerationError,
   generateAutoMonthMenus,
   getAllMenuItemIds,
   evaluateCandidates,
-  ruleSettingsToOptions,
-  getEffectiveTags,
-  inferTagsFromName,
   MAIN_MEAL_KEYS,
   MEAL_COURSE_FIELDS,
   type GeneratedMonth,
@@ -44,37 +40,16 @@ export interface GenerationError {
   message: string;
 }
 
-/** Yemeğin motor tarafından kullanılan metadata alanları. */
-export interface FoodItemMetadataChanges {
-  tags?: string[];
-  mainIngredients?: string[];
-  /** Ana yemekler için önerilen eşlikçi yemeklerin kimlikleri. */
-  suggestedCompanions?: string[];
-}
-
-const cleanList = (values: string[]): string[] =>
-  Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
-
 interface AppState {
   // Food pools
   foodItems: FoodItem[];
-  addFoodItem: (name: string, category: CategoryKey, extra?: FoodItemMetadataChanges) => void;
+  /** `group`: ana yemekler için grup (bakliyat, et, etli sebze, tavuk). */
+  addFoodItem: (name: string, category: CategoryKey, group?: MainGroup) => void;
   removeFoodItem: (id: string) => void;
-  /** `silent`: otomatik kaydetmelerde "Kaydedildi" bildirimi çıkmaz. */
-  updateFoodItem: (id: string, changes: FoodItemMetadataChanges, options?: { silent?: boolean }) => void;
-  /** Seçili yemeklere etiket ekler / çıkarır. Değişen yemek sayısını döndürür. */
-  bulkUpdateTags: (ids: string[], addTags: string[], removeTags: string[]) => number;
-  /**
-   * Seçili ANA YEMEKLERE eşlikçi ekler / çıkarır; `replace: true` ise mevcut listeyi `addIds` ile değiştirir.
-   * Yalnızca çorba / yan yemek / tamamlayıcı kimlikleri kabul edilir. Değişen yemek sayısını döndürür.
-   */
-  bulkUpdateCompanions: (ids: string[], addIds: string[], removeIds: string[], options?: { replace?: boolean }) => number;
-  /** Kayıtlı etiketi olmayan yemeklerin isimden tahmin edilen etiketlerini kalıcı yapar. Etkilenen sayıyı döndürür. */
-  confirmInferredTags: () => number;
+  /** Ana yemeğin grubunu değiştirir (undefined = grupsuz: menüye otomatik alınmaz). */
+  setMainGroup: (id: string, group: MainGroup | undefined) => void;
   /** Porsiyon kalorisi (kcal); null/0 temizler. */
   setCalories: (id: string, kcal: number | null) => void;
-  /** Ana yemeğin tekrar aralığı (en az kaç gün arayla); null = genel aralığı kullan. */
-  setRepeatGap: (id: string, days: number | null) => void;
   /** Mutfaktakip reçetesine bağlar (null = bağı kaldırır). */
   linkRecipe: (id: string, recipeId: string | null) => void;
   /** Mutfaktakip reçete kopyaları (kimlik → reçete). */
@@ -107,7 +82,7 @@ interface AppState {
   clearMenuDay: (date: string, mealKey?: PlannerMealKey) => void;
   /** `scope` verilirse yalnızca o tarih aralığı (ör. bir hafta) yeniden üretilir; kilitli günler her zaman korunur. */
   generateBalancedMonthMenus: (year: number, month: number, scope?: GenerationScope) => void;
-  /** Tek bir yemeği kurallara uygun bir başkasıyla değiştirir. Yeni yemeğin kimliğini döndürür. */
+  /** Tek bir yemeği (aynı gruptan, en uzun süredir seçilmemiş adaylardan) bir başkasıyla değiştirir. Yeni yemeğin kimliğini döndürür. */
   replaceCourse: (date: string, mealKey: MainMealKey, field: MealCourseField) => string | null;
   lockedDates: string[];
   toggleLockDay: (date: string) => void;
@@ -115,8 +90,9 @@ interface AppState {
   clearGenerationError: () => void;
 
   // Ayarlar
-  ruleSettings: RuleSettings;
-  setRuleSettings: (changes: Partial<RuleSettings>) => void;
+  /** Gün yasakları ve hafta sonu yasaklı yemekler. */
+  planSettings: PlanSettings;
+  setPlanSettings: (changes: Partial<PlanSettings>) => void;
   persons: PersonCounts;
   setPersons: (changes: Partial<PersonCounts>) => void;
 
@@ -146,37 +122,13 @@ type LegacyDailyMenu = {
   complement?: string | null;
 };
 
-const WEEKEND_SYNC_FIELDS: MealCourseField[] = ['soup', 'sideDish', 'complement'];
-
-function isWeekendDate(date: string): boolean {
-  const dayOfWeek = parseDate(date).getDay();
-  return dayOfWeek === 0 || dayOfWeek === 6;
-}
-
 function buildUpdatedMenu(
   menu: DailyMenu,
-  date: string,
   mealKey: MainMealKey,
   field: MealCourseField,
-  itemId: string | null,
-  weekendSync = true
+  itemId: string | null
 ): DailyMenu {
-  const updatedMenu: DailyMenu = {
-    ...menu,
-    [mealKey]: {
-      ...menu[mealKey],
-      [field]: itemId,
-    },
-  };
-
-  if (weekendSync && mealKey === 'lunch' && WEEKEND_SYNC_FIELDS.includes(field) && isWeekendDate(date)) {
-    updatedMenu.dinner = {
-      ...updatedMenu.dinner,
-      [field]: itemId,
-    };
-  }
-
-  return updatedMenu;
+  return { ...menu, [mealKey]: { ...menu[mealKey], [field]: itemId } };
 }
 
 function isFourCourseMeal(value: unknown): value is FourCourseMeal {
@@ -267,31 +219,6 @@ function createCategoryPools(foodItems: FoodItem[]): CategoryPools {
   };
 }
 
-function moveItemToCategoryEnd(foodItems: FoodItem[], itemId: string): FoodItem[] {
-  const targetItem = foodItems.find((item) => item.id === itemId);
-  if (!targetItem) return foodItems;
-
-  const categoryItems = foodItems.filter((item) => item.category === targetItem.category);
-  const otherItems = foodItems.filter((item) => item.category !== targetItem.category);
-  const reorderedCategoryItems = [
-    ...categoryItems.filter((item) => item.id !== itemId),
-    targetItem,
-  ];
-
-  return CATEGORY_KEYS.flatMap((category) =>
-    category === targetItem.category
-      ? reorderedCategoryItems
-      : otherItems.filter((item) => item.category === category)
-  );
-}
-
-function rotateFoodItemsBySelectionSequence(foodItems: FoodItem[], selectionSequence: string[]): FoodItem[] {
-  return selectionSequence.reduce(
-    (currentFoodItems, itemId) => moveItemToCategoryEnd(currentFoodItems, itemId),
-    foodItems
-  );
-}
-
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -307,13 +234,12 @@ export const useAppStore = create<AppState>()(
       orderPool: [],
       lockedDates: [],
       generationError: null,
-      ruleSettings: DEFAULT_RULE_SETTINGS,
+      planSettings: DEFAULT_PLAN_SETTINGS,
       persons: { lunch: 100, dinner: 100 },
 
-      addFoodItem: (name, category, extra) => {
+      addFoodItem: (name, category, group) => {
         const trimmed = name.trim();
         if (!trimmed) return;
-        // Prevent duplicate names in the same category
         const exists = get().foodItems.some(
           (f) => f.category === category && f.name.toLowerCase() === trimmed.toLowerCase()
         );
@@ -321,115 +247,24 @@ export const useAppStore = create<AppState>()(
           get().addToast({ type: 'error', title: 'Zaten Mevcut', message: `"${trimmed}" bu kategoride zaten var.` });
           return;
         }
-        const tags = extra?.tags ? cleanList(extra.tags) : [];
-        const mainIngredients = extra?.mainIngredients ? cleanList(extra.mainIngredients) : [];
         set((state) => ({
           foodItems: [
             ...state.foodItems,
-            {
-              id: generateId(),
-              name: trimmed,
-              category,
-              ...(tags.length > 0 ? { tags } : {}),
-              ...(mainIngredients.length > 0 ? { mainIngredients } : {}),
-            },
+            { id: generateId(), name: trimmed, category, ...(category === 'mainCourses' && group ? { group } : {}) },
           ],
         }));
         get().addToast({ type: 'success', title: 'Eklendi', message: `"${trimmed}" başarıyla eklendi.` });
       },
 
-      updateFoodItem: (id, changes, options) => {
-        const target = get().foodItems.find((item) => item.id === id);
-        if (!target) return;
-        set((state) => ({
-          foodItems: state.foodItems.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  ...(changes.tags !== undefined ? { tags: cleanList(changes.tags) } : {}),
-                  ...(changes.mainIngredients !== undefined
-                    ? { mainIngredients: cleanList(changes.mainIngredients) }
-                    : {}),
-                  ...(changes.suggestedCompanions !== undefined
-                    ? { suggestedCompanions: cleanList(changes.suggestedCompanions) }
-                    : {}),
-                }
-              : item
-          ),
-        }));
-        if (!options?.silent) {
-          get().addToast({
-            type: 'success',
-            title: 'Kaydedildi',
-            message: `"${target.name}" için etiketler ve eşlikçiler güncellendi.`,
-          });
-        }
-      },
-
-      bulkUpdateTags: (ids, addTags, removeTags) => {
-        const idSet = new Set(ids);
-        const toAdd = cleanList(addTags);
-        const toRemove = new Set(cleanList(removeTags));
-        let changed = 0;
+      setMainGroup: (id, group) =>
         set((state) => ({
           foodItems: state.foodItems.map((item) => {
-            if (!idSet.has(item.id) || item.category === 'snacks') return item;
-            const base = getEffectiveTags(item);
-            const next = cleanList([
-              ...base.filter((tag) => !toRemove.has(tag)),
-              ...toAdd.filter((tag) => isTagAllowedForCategory(tag, item.category)),
-            ]);
-            const unchanged =
-              item.tags !== undefined &&
-              item.tags.length === next.length &&
-              next.every((tag) => item.tags!.includes(tag));
-            if (unchanged) return item;
-            changed += 1;
-            return { ...item, tags: next };
+            if (item.id !== id || item.category !== 'mainCourses') return item;
+            const { group: _old, ...rest } = item;
+            void _old;
+            return group ? { ...rest, group } : rest;
           }),
-        }));
-        return changed;
-      },
-
-      bulkUpdateCompanions: (ids, addIds, removeIds, options) => {
-        const idSet = new Set(ids);
-        const COMPANION_CATEGORIES: CategoryKey[] = ['soups', 'sideDishes', 'complements'];
-        const validIds = new Set(
-          get().foodItems.filter((f) => COMPANION_CATEGORIES.includes(f.category)).map((f) => f.id)
-        );
-        const toAdd = cleanList(addIds).filter((id) => validIds.has(id));
-        const toRemove = new Set(cleanList(removeIds));
-        let changed = 0;
-        set((state) => ({
-          foodItems: state.foodItems.map((item) => {
-            if (!idSet.has(item.id) || item.category !== 'mainCourses') return item;
-            const current = (item.suggestedCompanions ?? []).filter((id) => validIds.has(id));
-            const base = options?.replace ? [] : current.filter((id) => !toRemove.has(id));
-            const next = cleanList([...base, ...toAdd]);
-            const unchanged =
-              (item.suggestedCompanions ?? []).length === next.length &&
-              next.every((id) => item.suggestedCompanions!.includes(id));
-            if (unchanged) return item;
-            changed += 1;
-            return { ...item, suggestedCompanions: next };
-          }),
-        }));
-        return changed;
-      },
-
-      confirmInferredTags: () => {
-        let confirmed = 0;
-        set((state) => ({
-          foodItems: state.foodItems.map((item) => {
-            if (item.category === 'snacks' || item.tags?.length) return item;
-            const inferred = inferTagsFromName(item);
-            if (inferred.length === 0) return item;
-            confirmed += 1;
-            return { ...item, tags: inferred };
-          }),
-        }));
-        return confirmed;
-      },
+        })),
 
       setCalories: (id, kcal) => {
         const value = kcal && Number.isFinite(kcal) && kcal > 0 ? Math.round(kcal) : undefined;
@@ -439,18 +274,6 @@ export const useAppStore = create<AppState>()(
             const { calories: _old, ...rest } = item;
             void _old;
             return value ? { ...rest, calories: value } : rest;
-          }),
-        }));
-      },
-
-      setRepeatGap: (id, days) => {
-        const value = days && Number.isFinite(days) && days >= 1 ? Math.min(60, Math.round(days)) : undefined;
-        set((state) => ({
-          foodItems: state.foodItems.map((item) => {
-            if (item.id !== id) return item;
-            const { repeatGapDays: _old, ...rest } = item;
-            void _old;
-            return value ? { ...rest, repeatGapDays: value } : rest;
           }),
         }));
       },
@@ -552,26 +375,19 @@ export const useAppStore = create<AppState>()(
 
       clearGenerationError: () => set({ generationError: null }),
 
-      setRuleSettings: (changes) =>
-        set((state) => ({ ruleSettings: { ...state.ruleSettings, ...changes } })),
+      setPlanSettings: (changes) =>
+        set((state) => ({ planSettings: { ...state.planSettings, ...changes } })),
 
       setPersons: (changes) => set((state) => ({ persons: { ...state.persons, ...changes } })),
 
       replaceCourse: (date, mealKey, field) => {
-        const { foodItems, menus, ruleSettings } = get();
-        const { ranked } = evaluateCandidates(
-          foodItems,
-          menus.map((menu) => normalizeMenu(menu)),
-          date,
-          mealKey,
-          field,
-          ruleSettingsToOptions(ruleSettings)
-        );
+        const { foodItems, menus, planSettings } = get();
+        const { ranked } = evaluateCandidates(foodItems, menus.map((menu) => normalizeMenu(menu)), date, mealKey, field, planSettings);
         if (ranked.length === 0) {
           get().addToast({
             type: 'warning',
             title: 'Uygun alternatif yok',
-            message: 'Bu yuva için kurallara uyan başka bir yemek bulunamadı. Havuza yemek ekleyin veya kuralları gevşetin.',
+            message: 'Bu yuva için seçilebilecek başka bir yemek bulunamadı. Havuza yemek ekleyin ya da yasakları gözden geçirin.',
           });
           return null;
         }
@@ -587,14 +403,12 @@ export const useAppStore = create<AppState>()(
         const targetIndex = before.foodItems.findIndex((f) => f.id === id);
         // Also clear from menus
         set((state) => ({
-          // Silinen yemeği öneri listelerinden de çıkar (boşta kalan kimlik kalmasın).
-          foodItems: state.foodItems
-            .filter((f) => f.id !== id)
-            .map((f) =>
-              f.suggestedCompanions?.includes(id)
-                ? { ...f, suggestedCompanions: f.suggestedCompanions.filter((companionId) => companionId !== id) }
-                : f
-            ),
+          foodItems: state.foodItems.filter((f) => f.id !== id),
+          // Silinen yemeği yasak listelerinden de çıkar (boşta kalan kimlik kalmasın).
+          planSettings: {
+            dayBans: Object.fromEntries(Object.entries(state.planSettings.dayBans).map(([k, v]) => [k, v.filter((e) => e !== `d:${id}`)])),
+            weekendBans: state.planSettings.weekendBans.filter((e) => e !== `d:${id}`),
+          },
           menus: state.menus.map((menu) => {
             const normalizedMenu = normalizeMenu(menu);
             if (!getAllMenuItemIds(normalizedMenu).includes(id)) return normalizedMenu;
@@ -666,23 +480,14 @@ export const useAppStore = create<AppState>()(
       setMealCourse: (date, mealKey, field, itemId) => {
         set((state) => {
           const existing = state.menus.find((m) => m.date === date);
-          const nextFoodItems = itemId ? moveItemToCategoryEnd(state.foodItems, itemId) : state.foodItems;
-
           if (existing) {
             return {
-              foodItems: nextFoodItems,
               menus: state.menus.map((m) =>
-                m.date === date
-                  ? buildUpdatedMenu(normalizeMenu(m), date, mealKey, field, itemId, get().ruleSettings.weekendSync)
-                  : normalizeMenu(m)
+                m.date === date ? buildUpdatedMenu(normalizeMenu(m), mealKey, field, itemId) : normalizeMenu(m)
               ),
             };
           }
-          const newMenu = buildUpdatedMenu(createEmptyDailyMenu(date), date, mealKey, field, itemId, get().ruleSettings.weekendSync);
-          return {
-            foodItems: nextFoodItems,
-            menus: [...state.menus, newMenu],
-          };
+          return { menus: [...state.menus, buildUpdatedMenu(createEmptyDailyMenu(date), mealKey, field, itemId)] };
         });
 
         // Check conflicts for main course
@@ -716,11 +521,8 @@ export const useAppStore = create<AppState>()(
       setSnack: (date, itemId) => {
         set((state) => {
           const existing = state.menus.find((m) => m.date === date);
-          const nextFoodItems = itemId ? moveItemToCategoryEnd(state.foodItems, itemId) : state.foodItems;
-
           if (existing) {
             return {
-              foodItems: nextFoodItems,
               menus: state.menus.map((m) =>
                 m.date === date ? { ...normalizeMenu(m), snack: itemId } : normalizeMenu(m)
               ),
@@ -728,10 +530,7 @@ export const useAppStore = create<AppState>()(
           }
           const newMenu = createEmptyDailyMenu(date);
           newMenu.snack = itemId;
-          return {
-            foodItems: nextFoodItems,
-            menus: [...state.menus, newMenu],
-          };
+          return { menus: [...state.menus, newMenu] };
         });
       },
 
@@ -756,14 +555,17 @@ export const useAppStore = create<AppState>()(
       },
 
       generateBalancedMonthMenus: (year, month, scope) => {
-        const { foodItems, menus, lockedDates, ruleSettings } = get();
+        const { foodItems, menus, lockedDates, planSettings } = get();
         const pools = createCategoryPools(foodItems);
-        const missingCategory = CATEGORY_KEYS.find((category) => pools[category].length === 0);
+        // Ana yemekte yalnızca grubu olan yemekler sayılır.
+        const poolSize = (category: CategoryKey) =>
+          category === 'mainCourses' ? pools[category].filter((item) => item.group).length : pools[category].length;
+        const missingCategory = CATEGORY_KEYS.find((category) => poolSize(category) === 0);
 
         if (missingCategory) {
           const missingLabels: Record<CategoryKey, string> = {
             soups: 'Çorbalar',
-            mainCourses: 'Ana Yemekler',
+            mainCourses: 'Ana Yemekler (grup seçilmiş)',
             sideDishes: 'Yan Yemekler',
             complements: 'Tamamlayıcılar',
             snacks: 'Ara Öğünler',
@@ -790,33 +592,24 @@ export const useAppStore = create<AppState>()(
 
         let generated: GeneratedMonth;
         try {
-          generated = generateAutoMonthMenus(
-            foodItems,
-            year,
-            month,
-            normalized,
-            ruleSettingsToOptions(ruleSettings),
-            frozenDates
-          );
+          generated = generateAutoMonthMenus(foodItems, year, month, normalized, planSettings, frozenDates);
         } catch (error) {
           console.error('Otomatik menü oluşturulamadı:', error);
-          const failure = { title: 'Menü Oluşturulamadı', message: formatMenuGenerationError(error) };
+          const failure = {
+            title: 'Menü Oluşturulamadı',
+            message: error instanceof Error ? error.message : 'Beklenmeyen bir hata oluştu.',
+          };
           set({ generationError: failure });
           get().addToast({ type: 'error', ...failure });
           return;
         }
 
-        const rotatedFoodItems = rotateFoodItemsBySelectionSequence(
-          foodItems,
-          generated.selectionSequence
-        );
         const preservedMenus = normalized.filter((menu) => {
           const menuDate = parseDate(menu.date);
           return !(menuDate.getFullYear() === year && menuDate.getMonth() === month);
         });
 
         set({
-          foodItems: rotatedFoodItems,
           generationError: null,
           menus: [...preservedMenus, ...generated.menus].sort((left, right) =>
             left.date.localeCompare(right.date)
@@ -913,7 +706,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'cafeteria-menu-store',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => (typeof window !== 'undefined' ? localStorage : { getItem: () => null, setItem: () => {}, removeItem: () => {} })),
       migrate: (persistedState: unknown) => {
         if (!persistedState || typeof persistedState !== 'object') return persistedState;
@@ -921,14 +714,37 @@ export const useAppStore = create<AppState>()(
         const state = persistedState as {
           foodItems?: FoodItem[];
           menus?: (DailyMenu | LegacyDailyMenu)[];
-          currentYear?: number;
-          currentMonth?: number;
+          planSettings?: PlanSettings;
+          ruleSettings?: { weekdayBans?: Record<string, string[]> };
         };
+
+        // Ana yemeklere başlangıç grubu ata (etiket / ada bakarak); sonra Havuz'dan düzenlenebilir.
+        const foodItems = normalizeFoodItems(state.foodItems).map((item) => {
+          if (item.category !== 'mainCourses' || item.group) return item;
+          const group = inferMainGroup(item);
+          return group ? { ...item, group } : item;
+        });
+
+        // Eski etiket tabanlı gün yasaklarını gruba çevir.
+        const TAG_TO_GROUPS: Record<string, string[]> = {
+          poultry: ['g:tavuk'], beef: ['g:et', 'g:etli_sebze'], legume: ['g:bakliyat'],
+        };
+        const dayBans: Record<string, string[]> = { ...(state.planSettings?.dayBans ?? {}) };
+        const weekendBans: string[] = [...(state.planSettings?.weekendBans ?? [])];
+        if (!state.planSettings) {
+          Object.entries(state.ruleSettings?.weekdayBans ?? {}).forEach(([day, tags]) => {
+            const entries = tags.flatMap((t) => TAG_TO_GROUPS[t] ?? []);
+            if (!entries.length) return;
+            if (day === '0' || day === '6') weekendBans.push(...entries);
+            else dayBans[day] = Array.from(new Set([...(dayBans[day] ?? []), ...entries]));
+          });
+        }
 
         return {
           ...state,
-          foodItems: normalizeFoodItems(state.foodItems),
+          foodItems,
           menus: (state.menus ?? []).map((menu) => normalizeMenu(menu)),
+          planSettings: { dayBans, weekendBans: Array.from(new Set(weekendBans)) },
         };
       },
       partialize: (state) => ({
@@ -941,7 +757,7 @@ export const useAppStore = create<AppState>()(
         orderItems: state.orderItems,
         orderPool: state.orderPool,
         lockedDates: state.lockedDates,
-        ruleSettings: state.ruleSettings,
+        planSettings: state.planSettings,
         persons: state.persons,
       }),
     }

@@ -24,15 +24,12 @@ import {
   CATEGORY_TO_COURSE_FIELD,
   COURSE_LABELS_TR,
   evaluateCandidates,
-  getEffectiveTags,
   MAIN_MEAL_KEYS,
   MEAL_LABELS_TR,
   MEAL_COURSE_FIELDS,
   PLANNER_MEAL_KEYS,
-  ruleSettingsToOptions,
   summarizeCalories,
 } from '@/lib/menu';
-import { isServedAt } from '@/lib/tags';
 import { addDays, cn, formatDateLabelTR, getWeekRange, MONTH_NAMES_TR, parseDate } from '@/lib/utils';
 import BottomSheet from '@/components/ui/BottomSheet';
 import ItemPicker from '@/components/ui/ItemPicker';
@@ -78,7 +75,7 @@ function formatConflictText(conflictType: 'daily' | 'weekly' | 'monthly') {
 export default function DayEditor({ date: initialDate, onClose }: Props) {
   const {
     foodItems, menus, setMealCourse, setSnack, clearMenuDay, checkConflicts, replaceCourse,
-    lockedDates, toggleLockDay, generateBalancedMonthMenus, ruleSettings,
+    lockedDates, toggleLockDay, generateBalancedMonthMenus, planSettings,
   } = useAppStore((s) => ({
     foodItems: s.foodItems,
     menus: s.menus,
@@ -90,7 +87,7 @@ export default function DayEditor({ date: initialDate, onClose }: Props) {
     lockedDates: s.lockedDates,
     toggleLockDay: s.toggleLockDay,
     generateBalancedMonthMenus: s.generateBalancedMonthMenus,
-    ruleSettings: s.ruleSettings,
+    planSettings: s.planSettings,
   }));
 
   const [date, setDate] = useState(initialDate);
@@ -122,15 +119,14 @@ export default function DayEditor({ date: initialDate, onClose }: Props) {
   // Aktif öğünün her kursu için motorun kural değerlendirmesi (uygun adaylar + ihlal nedenleri).
   const evaluations = useMemo(() => {
     if (activeMeal === 'snack') return null;
-    const options = ruleSettingsToOptions(ruleSettings);
     return MEAL_COURSE_FIELDS.reduce<Record<MealCourseField, ReturnType<typeof evaluateCandidates>>>(
       (acc, field) => {
-        acc[field] = evaluateCandidates(foodItems, menus, date, activeMeal, field, options, 1);
+        acc[field] = evaluateCandidates(foodItems, menus, date, activeMeal, field, planSettings);
         return acc;
       },
       {} as Record<MealCourseField, ReturnType<typeof evaluateCandidates>>
     );
-  }, [activeMeal, foodItems, menus, date, ruleSettings]);
+  }, [activeMeal, foodItems, menus, date, planSettings]);
 
   const regenerateWeek = () => {
     const { from, to } = getWeekRange(date);
@@ -176,27 +172,13 @@ export default function DayEditor({ date: initialDate, onClose }: Props) {
             4 kap: {COURSE_LABELS_TR.soup}, {COURSE_LABELS_TR.mainCourse}, {COURSE_LABELS_TR.sideDish},{' '}
             {COURSE_LABELS_TR.complement}
           </p>
-          {isWeekend && mealKey === 'lunch' && ruleSettings.weekendSync && (
-            <p className="text-xs text-amber-300/80 mt-2">
-              Hafta sonlarında {COURSE_LABELS_TR.soup}, {COURSE_LABELS_TR.sideDish} ve {COURSE_LABELS_TR.complement}{' '}
-              seçimi otomatik olarak akşam yemeğine de uygulanır. {COURSE_LABELS_TR.mainCourse} bağımsız kalır.
-            </p>
-          )}
         </div>
 
         {MAIN_MEAL_CATEGORIES.map((category) => {
           const field = CATEGORY_TO_COURSE_FIELD[category.key] as MealCourseField;
           const selected = meal?.[field] || '';
           const inCategory = foodItems.filter((item) => item.category === category.key);
-          // Servis zamanı etiketi olan yemekler yalnızca uygun öğünde listelenir.
-          const copiedToDinner =
-            isWeekend && mealKey === 'lunch' && category.key !== 'mainCourses' && ruleSettings.weekendSync;
-          const items = inCategory.filter((item) => {
-            if (item.id === selected) return true; // mevcut seçim kaybolmasın
-            const tags = getEffectiveTags(item);
-            return isServedAt(tags, mealKey, isWeekend) && (!copiedToDinner || isServedAt(tags, 'dinner', isWeekend));
-          });
-          const hiddenCount = inCategory.length - items.length;
+          const items = inCategory;
           const isMainConflict = field === 'mainCourse' && conflicts.length > 0;
           const evaluation = evaluations?.[field];
 
@@ -234,11 +216,6 @@ export default function DayEditor({ date: initialDate, onClose }: Props) {
                   {selected ? <RefreshCw className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
                 </button>
               </div>
-              {hiddenCount > 0 && (
-                <p className="mt-1 text-[11px] text-white/35">
-                  {hiddenCount} yemek servis zamanı etiketi nedeniyle bu öğünde gizlendi.
-                </p>
-              )}
               {isMainConflict && (
                 <div className="mt-1.5 flex items-start gap-1.5 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
